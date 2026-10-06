@@ -97,7 +97,10 @@
       "extendInfo": {
         "NSMicrophoneUsageDescription": "MyBuildy uses the microphone only when you click the mic to ask a question.",
         "NSAppleEventsUsageDescription": "MyBuildy asks System Events to bring your terminal to the front and press Cmd+V when you click Paste into terminal. It never presses Return."
-      }
+      },
+      "signIgnore": [
+        "Contents/Resources/kokoro/"
+      ]
     },
     "dmg": {
       "artifactName": "MyBuildy-${version}-${arch}.${ext}",
@@ -107,5 +110,10 @@
     "asarUnpack": [
       "node_modules/onnxruntime-node/**"
     ]
+  },
+  "overrides": {
+    "@electron/osx-sign": {
+      "isbinaryfile": "5.0.7"
+    }
   }
 }
