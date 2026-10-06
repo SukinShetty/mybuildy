@@ -10,7 +10,7 @@
 import { test, expect } from '@playwright/test'
 import * as fs from 'fs'
 import * as path from 'path'
-import { launchMyBuildy, IS_PACKAGED_RUN, type MyBuildyApp } from './helpers'
+import { launchMyBuildy, IS_PACKAGED_RUN, LAUNCH_TIMEOUT_MS, type MyBuildyApp } from './helpers'
 
 test.setTimeout(180_000)
 
@@ -19,7 +19,8 @@ const LINE = 'Claude Code just finished building your invoice page. Two tests pa
 let m: MyBuildyApp
 let watchLog = (): string => ''
 
-test.beforeAll(async () => {
+test.beforeAll(async ({}, testInfo) => {
+  testInfo.setTimeout(LAUNCH_TIMEOUT_MS * 2 + 60_000)
   m = await launchMyBuildy({ env: { MYBUILDY_E2E_KOKORO: '1' } })
   const file = path.join(await m.app.evaluate(({ app }) => app.getPath('userData')), 'logs', 'watch.log')
   watchLog = () => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '')

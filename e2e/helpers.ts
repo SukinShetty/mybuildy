@@ -23,6 +23,8 @@ const DEV_MAIN_ENTRY = path.join(ROOT, 'out', 'main', 'index.js')
 /** Packaged-exe mode: set by scripts/e2e-packaged.mjs (npm run test:e2e:packaged). */
 export const PACKAGED_EXE = process.env.MYBUILDY_E2E_EXE || null
 export const IS_PACKAGED_RUN = !!PACKAGED_EXE
+/** How long MyBuildy may take to open (longer for an Intel app's first launch under Rosetta). */
+export const LAUNCH_TIMEOUT_MS = Number(process.env.MYBUILDY_E2E_LAUNCH_TIMEOUT_MS) || 30_000
 
 /**
  * The REAL MyBuildy profile on this machine — must never be touched by e2e.
@@ -148,8 +150,8 @@ export async function launchMyBuildy(options: LaunchOptions = {}): Promise<MyBui
   try {
     app = await _electron.launch(
       IS_PACKAGED_RUN
-        ? { executablePath: PACKAGED_EXE!, env }
-        : { args: [DEV_MAIN_ENTRY], env }
+        ? { executablePath: PACKAGED_EXE!, env, timeout: LAUNCH_TIMEOUT_MS }
+        : { args: [DEV_MAIN_ENTRY], env, timeout: LAUNCH_TIMEOUT_MS }
     )
   } catch (error) {
     removeProfile() // launch failed — don't leak the throwaway profile
@@ -185,7 +187,7 @@ export async function launchMyBuildy(options: LaunchOptions = {}): Promise<MyBui
     })
 
     // Wait for all four windows to exist and finish loading.
-    const deadline = Date.now() + 30_000
+    const deadline = Date.now() + LAUNCH_TIMEOUT_MS
     for (;;) {
       for (const page of app.windows()) {
         // The e2e fakes' stand-in terminal (a data: page) is not one of MyBuildy's windows.

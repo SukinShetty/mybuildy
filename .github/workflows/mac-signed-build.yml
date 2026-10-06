@@ -65,7 +65,8 @@ jobs:
         run: |
           MYBUILDY_E2E_EXE="$PWD/dist/mac-arm64/MyBuildy.app/Contents/MacOS/MyBuildy" npx playwright test e2e/buildy-voice.spec.ts
           if arch -x86_64 /usr/bin/true 2>/dev/null; then
-            MYBUILDY_E2E_EXE="$PWD/dist/mac/MyBuildy.app/Contents/MacOS/MyBuildy" npx playwright test e2e/buildy-voice.spec.ts
+            # An Intel app's first launch under Rosetta translates all of Electron: allow it 5 minutes.
+            MYBUILDY_E2E_LAUNCH_TIMEOUT_MS=300000 MYBUILDY_E2E_EXE="$PWD/dist/mac/MyBuildy.app/Contents/MacOS/MyBuildy" npx playwright test e2e/buildy-voice.spec.ts --timeout 720000
           else
             echo "Rosetta is not available on this runner: the Intel app's engine signature is checked above, not run."
           fi
