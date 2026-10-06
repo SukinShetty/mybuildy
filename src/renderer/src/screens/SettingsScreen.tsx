@@ -15,8 +15,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { RobotSizeSetting } from '../components/RobotSizeSetting'
-import type { ProviderType, NonSecretSettings, SecretName, ModelChoice } from '../types'
+import type { ProviderType, NonSecretSettings, SecretName, ModelChoice, VoiceFallback } from '../types'
 import {
+  VOICE_FALLBACK_HEADLINE,
   HOURLY_CALL_CAP_MIN, HOURLY_CALL_CAP_MAX, NO_SECURE_STORAGE_MESSAGE, API_CREDITS_NOTE, PROVIDER_BILLING_URLS,
   dataDestinationNote, suggestsNextModel,
 } from '../types'
@@ -139,6 +140,12 @@ export function SettingsScreen(): React.ReactElement {
   const [replacingKey, setReplacingKey] = useState(false)
   const [elevenKeyInput, setElevenKeyInput] = useState('')
   const [replacingElevenKey, setReplacingElevenKey] = useState(false)
+  // ElevenLabs failed and the computer's voice is speaking: say so here too.
+  const [voiceFallback, setVoiceFallback] = useState<VoiceFallback | null>(null)
+  useEffect(() => {
+    void window.mybuildy.getVoiceFallback().then(setVoiceFallback)
+    return window.mybuildy.onVoiceFallback(setVoiceFallback)
+  }, [])
   const [baseUrl, setBaseUrl] = useState(settings.baseUrl)
   const [typedModelId, setTypedModelId] = useState('')
   const [elevenLabsVoiceId, setElevenLabsVoiceId] = useState(settings.elevenLabsVoiceId ?? DEFAULT_VOICE_ID)
@@ -591,8 +598,13 @@ export function SettingsScreen(): React.ReactElement {
         <div style={styles.section}>
           <div style={styles.sectionLabel}>Voice (ElevenLabs)</div>
           <div style={styles.sectionHint}>
-            Optional. Adds natural, warm voice + the mic button. Falls back to system voice if not set.
+            Optional. Adds natural, warm voice + the mic button. Without a key, MyBuildy uses your computer's voice.
           </div>
+          {voiceFallback && (
+            <div style={styles.voiceFallback} role="alert" data-testid="settings-voice-fallback">
+              <strong>{VOICE_FALLBACK_HEADLINE}.</strong> {voiceFallback.reason}
+            </div>
+          )}
           {settings.hasElevenLabsKey && !replacingElevenKey ? (
             <div style={styles.keySavedRow}>
               <span style={styles.keySavedBadge}>Saved</span>
@@ -772,9 +784,9 @@ export function SettingsScreen(): React.ReactElement {
           <div style={styles.modalCard}>
             <div style={styles.modalTitle}>Delete all MyBuildy data?</div>
             <div style={styles.modalText}>
-              This deletes your keys, settings and all project memory from this
-              computer. This cannot be undone. MyBuildy will restart as if freshly
-              installed.
+              This deletes your keys — including your voice (ElevenLabs) key — your
+              settings and all project memory from this computer. This cannot be
+              undone. MyBuildy will restart as if freshly installed.
             </div>
             <div style={styles.modalButtons}>
               <button
@@ -1061,6 +1073,17 @@ const styles = {
     alignItems: 'center',
     gap: 8,
     flexWrap: 'wrap' as const,
+  },
+  voiceFallback: {
+    marginTop: 6,
+    marginBottom: 6,
+    padding: '8px 10px',
+    borderRadius: 8,
+    border: '1px solid var(--color-warning)',
+    background: 'rgba(255, 159, 10, 0.08)',
+    fontSize: 12,
+    lineHeight: 1.45,
+    color: 'var(--color-text)',
   },
   keySavedBadge: {
     fontSize: 10,

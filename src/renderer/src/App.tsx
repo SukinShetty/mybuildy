@@ -80,6 +80,11 @@ function MainPanel(): React.ReactElement {
     useAppStore.getState().resetForProjectSwitch()
   }), [])
 
+  // The robot's "Open Settings" (e.g. on the voice notice) lands here.
+  useEffect(() => window.mybuildy.onShowScreen((screen) => {
+    if (screen === 'settings') useAppStore.getState().setCurrentScreen('settings')
+  }), [])
+
   // The one watch: the Guidance tab shows exactly what main (and so the robot)
   // has — the watched window, Auto, a running analysis and its result.
   useEffect(() => {

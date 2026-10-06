@@ -529,6 +529,14 @@ export interface WatchStatus {
   message: string | null      // why watching stopped or can't start, or what needs the user
 }
 
+// MyBuildy is speaking with the computer's voice because the ElevenLabs key
+// failed (main/voice-health.ts). Shown on the robot and in Settings; never silent.
+export interface VoiceFallback {
+  code: string
+  reason: string   // plain English: why ElevenLabs didn't work
+}
+export const VOICE_FALLBACK_HEADLINE = "Your voice key isn't working, so MyBuildy is using your computer's voice"
+
 // "Analyze Now": started, already running (its result is on the way), or no window watched yet.
 export type AnalyzeNowResult = 'started' | 'already-running' | 'no-window'
 
@@ -586,6 +594,10 @@ export const IPC = {
   WATCH_STATUS:        'mybuildy:watch-status',        // main → robot + main window (the one WatchStatus)
   WATCH_STATUS_GET:    'mybuildy:watch-status-get',    // renderer → main (current WatchStatus + the analysis on display)
   ANALYSIS_RESULT:     'mybuildy:analysis-result',     // main → main window (each analysis the robot gets, for the Guidance tab)
+  VOICE_FALLBACK:      'voice:fallback',               // main → robot + main window (VoiceFallback, or null when ElevenLabs works again)
+  VOICE_FALLBACK_GET:  'voice:fallback-get',           // renderer → main (the current VoiceFallback or null)
+  OPEN_SETTINGS:       'mybuildy:open-settings',       // robot → main (show the panel on Settings)
+  SHOW_SCREEN:         'mybuildy:show-screen',         // main → main window (switch to a screen, e.g. 'settings')
   BRAINSTORM_START:    'mybuildy:brainstorm-start',
   BRAINSTORM_CHUNK:    'mybuildy:brainstorm-chunk',    // main → renderer push
   BRAINSTORM_DONE:     'mybuildy:brainstorm-done',     // main → renderer push

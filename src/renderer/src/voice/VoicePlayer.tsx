@@ -8,6 +8,7 @@
 // cancel logs a stack trace so we can see WHO interrupted playback.
 
 import { useEffect } from 'react'
+import { pickBackupVoice } from './backup-voice'
 
 const T0 = performance.now()
 const ts = (): string => (performance.now() - T0).toFixed(0).padStart(6)
@@ -68,6 +69,8 @@ export function VoicePlayer(): null {
         // @ts-expect-error TS narrows `window` to `never` inside this negated `in` guard, but window.mybuildy exists at runtime
         if (!('speechSynthesis' in window)) { window.mybuildy.voice.error(d.id); return }
         const utter = new SpeechSynthesisUtterance(d.text)
+        const backupVoice = pickBackupVoice(window.speechSynthesis.getVoices()) // a natural female voice, never David
+        if (backupVoice) utter.voice = backupVoice
         utter.rate = 0.95
         utter.pitch = 1.05
         utter.volume = 1.0

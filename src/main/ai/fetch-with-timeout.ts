@@ -28,6 +28,15 @@ export function withCancellation<T>(signal: AbortSignal, fn: () => Promise<T>): 
   return cancelScope.run(signal, fn)
 }
 
+/**
+ * Run `fn` outside any cancellation scope. Speech uses this: it has its own Stop
+ * (voice-player.ts), and must not be cut over to the computer's voice because
+ * the watch that asked for it ended (a project switch mid-sentence).
+ */
+export function withoutCancellation<T>(fn: () => Promise<T>): Promise<T> {
+  return cancelScope.exit(fn)
+}
+
 /** True when the current scope has been cancelled (lets loops bail out before a capture). */
 export function isCancelled(): boolean {
   return cancelScope.getStore()?.aborted ?? false

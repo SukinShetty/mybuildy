@@ -20,9 +20,12 @@ import type { AppSettings } from '../renderer/src/types'
 import { VoiceQueue } from './voice-queue'
 import type { SpeakRequest } from './voice-queue'
 import { synthesizeSpeech } from './ai/elevenlabs-tts'
+import { withoutCancellation } from './ai/fetch-with-timeout'
 import { sendSpeechProgress } from './guidance-window'
 import { loadSettings } from './memory'
 import { debugLog } from './debug-log'
+import { logWatchEvent } from './watch-log'
+import { VoiceHealth, type VoiceFailureCode, type VoiceFallbackState } from './voice-health'
 
 const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'
 const SETTINGS_TTL_MS = 10_000
@@ -31,6 +34,40 @@ let voiceWin: BrowserWindow | null = null
 let queue: VoiceQueue | null = null
 let cachedSettings: AppSettings | null = null
 let cachedAt = 0
+
+// Never a silent fallback: while a set ElevenLabs key fails, the robot and
+// Settings say so, with the reason (voice-health.ts). ipc-handlers.ts decides
+// where the notice goes.
+const voiceHealth = new VoiceHealth()
+let voiceNotice: (state: VoiceFallbackState | null) => void = () => {}
+
+export function setVoiceFallbackNotice(notify: (state: VoiceFallbackState | null) => void): void {
+  voiceNotice = notify
+}
+
+export function getVoiceFallback(): VoiceFallbackState | null {
+  return voiceHealth.current()
+}
+
+/** The ElevenLabs key was saved, replaced or removed: start afresh (and re-read it). */
+export function resetVoiceHealth(): void {
+  cachedSettings = null
+  if (voiceHealth.ok() === null) voiceNotice(null)
+}
+
+function voiceFailed(code: VoiceFailureCode): void {
+  const changed = voiceHealth.failed(code)
+  if (changed === undefined) return
+  console.warn(`[VoicePlayer-Main] ElevenLabs failed (${code}) — using the computer's voice, and saying so`)
+  logWatchEvent('voice-fallback', { reason: code })
+  voiceNotice(changed)
+}
+
+function voiceWorked(): void {
+  if (voiceHealth.ok() === undefined) return
+  logWatchEvent('voice-restored')
+  voiceNotice(null)
+}
 
 async function getSettings(): Promise<AppSettings | null> {
   if (!cachedSettings || Date.now() - cachedAt > SETTINGS_TTL_MS) {
@@ -107,15 +144,22 @@ export function createVoicePlayerWindow(): BrowserWindow {
         win.webContents.send(IPC.VOICE_STOP)
       },
     },
-    // ElevenLabs synthesis per chunk; null → the player uses system TTS.
+    // ElevenLabs synthesis per chunk; null → the player uses system TTS. With a
+    // key set, a failure is never silent (voiceFailed). Run outside the watch's
+    // cancel scope: speech has its own Stop, and must not switch voice because
+    // the watch that asked for it ended.
     synth: async (chunkText) => {
       const s = await getSettings()
       if (!s || !s.elevenLabsApiKey) return null
+      const key = s.elevenLabsApiKey
       try {
-        const r = await synthesizeSpeech(chunkText, s.elevenLabsApiKey, s.elevenLabsVoiceId || DEFAULT_VOICE_ID)
-        return r.success && r.audioBase64 ? r.audioBase64 : null
+        const r = await withoutCancellation(() => synthesizeSpeech(chunkText, key, s.elevenLabsVoiceId || DEFAULT_VOICE_ID))
+        if (r.success && r.audioBase64) { voiceWorked(); return r.audioBase64 }
+        if (r.failure) voiceFailed(r.failure)
+        return null
       } catch (error) {
         console.warn('[VoicePlayer-Main] synth error → falling back to system TTS:', error)
+        voiceFailed('other')
         return null
       }
     },

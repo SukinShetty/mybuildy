@@ -14,8 +14,8 @@ import { robotSizeText } from '../robot-size'
 import { robotHiddenMessage, hideButtonTitle } from '../robot-hidden'
 import { useRefreshWhileOpen } from '../components/useRefreshWhileOpen'
 import { BAR_BACKGROUND_CSS, ICON_COLOR, ICON_HOVER_COLOR, ICON_HOVER_BACKGROUND_CSS } from './robot-theme'
-import type { AnalysisResult, WatchStatus } from '../types'
-import { isModelConfigured, CAPTURE_NOTICE_MESSAGE } from '../types'
+import type { AnalysisResult, WatchStatus, VoiceFallback } from '../types'
+import { isModelConfigured, CAPTURE_NOTICE_MESSAGE, VOICE_FALLBACK_HEADLINE } from '../types'
 import type { CompanionState, MicState } from '../store/useCompanionStore'
 
 interface WindowItem { id: string; name: string; thumbnailBase64: string }
@@ -43,6 +43,9 @@ export function CompanionApp(): React.ReactElement {
   const [confirmQuit, setConfirmQuit] = useState(false)
   const [sizeToast, setSizeToast] = useState<string | null>(null)
   const [hiding, setHiding] = useState(false)
+  // ElevenLabs failed, so the computer's voice is speaking — said plainly, with why.
+  const [voiceFallback, setVoiceFallback] = useState<VoiceFallback | null>(null)
+  const [voiceNoticeDismissed, setVoiceNoticeDismissed] = useState<string | null>(null)
   const mascotWrapRef = useRef<HTMLDivElement | null>(null)
   const isMutedRef = useRef(isMuted)
   isMutedRef.current = isMuted
@@ -113,7 +116,9 @@ export function CompanionApp(): React.ReactElement {
       if (!s.windowName) { clearAnalysis(); resetMascotSignals(); window.mybuildy.hideGuidance() }
     }
     void window.mybuildy.getWatchStatus().then(({ status }) => applyWatchStatus(status))
+    void window.mybuildy.getVoiceFallback().then(setVoiceFallback)
     const unsubs = [
+      window.mybuildy.onVoiceFallback(setVoiceFallback),
       window.mybuildy.onWatchStatus(applyWatchStatus),
       // Stop, from here or the Guidance tab: drop a recording in progress (main
       // has already ended the watch and silenced the voice).
@@ -501,6 +506,18 @@ export function CompanionApp(): React.ReactElement {
       {/* Robot size, shown briefly while zooming (Ctrl/Cmd + scroll wheel) */}
       {sizeToast && <div style={S.sizeToast} role="status">{sizeToast}</div>}
 
+      {/* The computer's voice is speaking because ElevenLabs failed: say so, and why */}
+      {voiceFallback && voiceNoticeDismissed !== voiceFallback.code && (
+        <div style={S.voiceNotice} role="alert" data-testid="voice-fallback">
+          <div style={S.voiceNoticeTitle}>{VOICE_FALLBACK_HEADLINE}</div>
+          <div style={S.voiceNoticeReason}>{voiceFallback.reason}</div>
+          <div style={S.voiceNoticeButtons}>
+            <button style={S.voiceNoticeButton} onClick={() => window.mybuildy.openSettings()}>Open Settings</button>
+            <button style={S.voiceNoticeDismiss} onClick={() => setVoiceNoticeDismissed(voiceFallback.code)}>OK</button>
+          </div>
+        </div>
+      )}
+
       {/* Hide: how to bring him back, before he goes */}
       {hiding && <div style={S.hideNotice} role="alert">{robotHiddenMessage(window.mybuildy.platform)}</div>}
 
@@ -695,6 +712,48 @@ const S = {
   quitGap: {
     width: 6,
     flexShrink: 0,
+  },
+  voiceNotice: {
+    marginTop: 6,
+    maxWidth: 310,
+    padding: '8px 12px',
+    borderRadius: 12,
+    background: 'rgba(28,28,30,0.95)',
+    border: '1px solid rgba(255,159,10,0.6)',
+    color: '#F2F2F7',
+    fontSize: 12,
+    lineHeight: 1.35,
+  },
+  voiceNoticeTitle: {
+    fontWeight: 700,
+  },
+  voiceNoticeReason: {
+    marginTop: 3,
+    color: '#D1D1D6',
+  },
+  voiceNoticeButtons: {
+    display: 'flex',
+    gap: 8,
+    marginTop: 6,
+  },
+  voiceNoticeButton: {
+    background: '#FF9F0A',
+    color: '#1C1C1E',
+    border: 'none',
+    borderRadius: 8,
+    padding: '3px 10px',
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+  voiceNoticeDismiss: {
+    background: 'transparent',
+    color: '#F2F2F7',
+    border: '1px solid rgba(255,255,255,0.3)',
+    borderRadius: 8,
+    padding: '3px 10px',
+    fontSize: 12,
+    cursor: 'pointer',
   },
   hideNotice: {
     marginTop: 6,

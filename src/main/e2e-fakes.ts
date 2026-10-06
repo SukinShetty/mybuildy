@@ -71,6 +71,16 @@ export async function fakeAnalyzeScreen(): Promise<AnalysisResult> {
   return fakeAnalysis()
 }
 
+/**
+ * ElevenLabs in e2e: never called. MYBUILDY_E2E_FAKE_VOICE=<failure code>
+ * (e.g. "quota") makes every speech request fail that way, to test the notice;
+ * without it speech goes straight to the computer's voice.
+ */
+export function fakeElevenLabsFailure(): string | null {
+  if (!e2eFakes()) return null
+  return process.env['MYBUILDY_E2E_FAKE_VOICE'] || 'none'
+}
+
 /** A canned analysis for a watch started during the e2e wizard run. */
 export function fakeAnalysis(): AnalysisResult {
   return {

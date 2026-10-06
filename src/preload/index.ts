@@ -14,6 +14,7 @@ import type {
   WatchStartResult,
   WatchStatus,
   AnalyzeNowResult,
+  VoiceFallback,
   DeleteProjectResult,
   SetupInfo,
   SetupPermissionStatus,
@@ -62,6 +63,25 @@ const mybuildyAPI = {
     const listener = (_event: Electron.IpcRendererEvent, status: WatchStatus) => handler(status)
     ipcRenderer.on(IPC.WATCH_STATUS, listener)
     return () => ipcRenderer.removeListener(IPC.WATCH_STATUS, listener)
+  },
+
+  // ElevenLabs failed, so the computer's voice is speaking: why (null = fixed).
+  getVoiceFallback: (): Promise<VoiceFallback | null> =>
+    ipcRenderer.invoke(IPC.VOICE_FALLBACK_GET),
+
+  onVoiceFallback: (handler: (fallback: VoiceFallback | null) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, fallback: VoiceFallback | null) => handler(fallback)
+    ipcRenderer.on(IPC.VOICE_FALLBACK, listener)
+    return () => ipcRenderer.removeListener(IPC.VOICE_FALLBACK, listener)
+  },
+
+  // Show the panel on Settings (the robot's "Open Settings").
+  openSettings: (): void => ipcRenderer.send(IPC.OPEN_SETTINGS),
+
+  onShowScreen: (handler: (screen: string) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, screen: string) => handler(screen)
+    ipcRenderer.on(IPC.SHOW_SCREEN, listener)
+    return () => ipcRenderer.removeListener(IPC.SHOW_SCREEN, listener)
   },
 
   // Every analysis the robot gets, for the Guidance tab.

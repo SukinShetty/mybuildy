@@ -24,7 +24,7 @@ import { isModelConfigured } from '../renderer/src/types'
 import { IPC, CHOOSE_MODEL_MESSAGE, CAPTURE_NOTICE_REQUIRED_MESSAGE, MAC_PERMISSION_MESSAGES, MAC_BLANK_CAPTURE_MESSAGE } from '../renderer/src/types'
 import type { AppSettings, NonSecretSettings, GuidancePayload, WatchStartResult, AnalyzeNowResult } from '../renderer/src/types'
 import { showGuidanceWindow, hideGuidanceWindow, resizeGuidanceWindow, showLastGuidance, getGuidanceWebContentsId, setGuidanceFocusable, clearGuidanceCache } from './guidance-window'
-import { handleVoiceEnded, handleVoiceError, stopVoice, setVoiceMuted, resetVoiceDedup } from './voice-player'
+import { handleVoiceEnded, handleVoiceError, stopVoice, setVoiceMuted, resetVoiceDedup, setVoiceFallbackNotice, getVoiceFallback, resetVoiceHealth } from './voice-player'
 import * as nemp from './nemp-bridge'
 import { listOpenWindows, probeWatchedWindowFrame } from './capturer'
 import {
@@ -161,6 +161,28 @@ export function registerIpcHandlers(
   })
 
   ipcMain.handle(IPC.WATCH_STATUS_GET, async () => ({ status: getWatchStatus(), analysis: getDisplayedAnalysis() }))
+
+  // ─── Voice: never a silent fallback to the computer's voice ─────────────────
+  // While a set ElevenLabs key fails, the robot and Settings say so, with why.
+  setVoiceFallbackNotice((state) => {
+    const fallback = state ? { code: state.code, reason: state.reason } : null
+    for (const win of [getCompanionWindow(), getMainWindow()]) {
+      if (win && !win.isDestroyed()) win.webContents.send(IPC.VOICE_FALLBACK, fallback)
+    }
+  })
+  ipcMain.handle(IPC.VOICE_FALLBACK_GET, async () => {
+    const state = getVoiceFallback()
+    return state ? { code: state.code, reason: state.reason } : null
+  })
+
+  // The robot's "Open Settings": the panel, on Settings.
+  ipcMain.on(IPC.OPEN_SETTINGS, () => {
+    const main = getMainWindow()
+    if (main.isDestroyed()) return
+    main.webContents.send(IPC.SHOW_SCREEN, 'settings')
+    main.show()
+    main.focus()
+  })
 
   // Analyze Now (Guidance tab): the watch's own analysis cycle, run now.
   ipcMain.handle(IPC.ANALYZE_NOW, async (): Promise<AnalyzeNowResult> => analyzeNow())
@@ -525,6 +547,7 @@ export function registerIpcHandlers(
       const boundOrigin = name === 'customApiKey' ? originOf((await loadNonSecretSettings()).baseUrl) : null
       setSecret(name, value, boundOrigin) // never logged
       invalidateSettingsCache()
+      if (name === 'elevenLabsApiKey') resetVoiceHealth() // a new (or no) key: try ElevenLabs afresh
     } catch (error) {
       console.error('[IPC] SET_SECRET error:', error)
       throw error
