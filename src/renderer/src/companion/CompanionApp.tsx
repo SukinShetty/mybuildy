@@ -11,6 +11,7 @@ import { currentAnimation, reactionSeconds, robotGlow, type RobotReaction, type 
 import { nextStepLabel } from './next-step'
 import { ResolvedHandoffs } from '../handoff'
 import { robotSizeText } from '../robot-size'
+import { useRefreshWhileOpen } from '../components/useRefreshWhileOpen'
 import { BAR_BACKGROUND_CSS, ICON_COLOR, ICON_HOVER_COLOR, ICON_HOVER_BACKGROUND_CSS } from './robot-theme'
 import type { AnalysisResult, WatchStatus } from '../types'
 import { isModelConfigured, CAPTURE_NOTICE_MESSAGE } from '../types'
@@ -170,6 +171,12 @@ export function CompanionApp(): React.ReactElement {
   }, [])
 
   // ─── Window picker ──────────────────────────────────────────────────
+
+  // A fresh list every time it opens, and again while it stays open.
+  useRefreshWhileOpen(showWindowPicker, async () => {
+    const wins = await window.mybuildy.listWindows()
+    setWindowList(wins.map((w) => ({ id: w.id, name: w.name, thumbnailBase64: w.thumbnailBase64 })))
+  })
 
   async function openPicker(): Promise<void> {
     const s = await window.mybuildy.loadSettings()

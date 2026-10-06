@@ -15,6 +15,7 @@ import type {
 import { API_CREDITS_NOTE, CAPTURE_NOTICE_MESSAGE, PROVIDER_BILLING_URLS, dataDestinationNote, suggestsNextModel } from '../types'
 import { useAppStore } from '../store/useAppStore'
 import { WindowPicker } from '../components/WindowPicker'
+import { useRefreshWhileOpen } from '../components/useRefreshWhileOpen'
 import {
   type SetupStepId, type KeyProvider, KEY_PROVIDERS, ADVANCED_KEY_PROVIDERS, NOT_YET_TESTED_LABEL, READY_GOALS, OWN_GOAL_EXAMPLE, CLAUDE_CODE_INSTALL_URL,
   setupSteps, progressLabel, resumeStep, nextStep, previousStep, doneWhenText, agentInstructions,
@@ -602,6 +603,12 @@ function WindowStep({ allow, onBeforeNext, skip, onWatching }: StepProps): React
   const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => { allow(!!chosenName); onBeforeNext(null) }, [chosenName, allow, onBeforeNext])
+
+  // A window closed while the picker is open disappears from it.
+  useRefreshWhileOpen(windows !== null, async () => {
+    const fresh = await window.mybuildy.listWindows()
+    setWindows((open) => (open === null ? null : fresh))
+  })
 
   async function openPicker(): Promise<void> {
     setMessage(null)

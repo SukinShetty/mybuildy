@@ -2,7 +2,7 @@
 // All IPC channels registered in one place.
 // Every channel name is defined in types.ts (IPC constant) to prevent typos.
 
-import { app, ipcMain, clipboard, dialog, shell, systemPreferences, webContents } from 'electron'
+import { app, BrowserWindow as ElectronWindow, ipcMain, clipboard, dialog, shell, systemPreferences, webContents } from 'electron'
 import { originOf, customKeyActionOnSave } from './provider-origins'
 import { providerHttpError, readJson, mapProviderError } from './ai/provider-errors'
 import { providerFetch, withCancellation, CancelledError } from './ai/fetch-with-timeout'
@@ -134,7 +134,9 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC.LIST_WINDOWS, async () => {
     try {
-      return await listOpenWindows()
+      // Never offer MyBuildy's own windows (robot, panel, main, voice).
+      const ownIds = new Set(ElectronWindow.getAllWindows().map((w) => w.getMediaSourceId()))
+      return await listOpenWindows(ownIds)
     } catch (error) {
       console.error('[IPC] LIST_WINDOWS error:', error)
       throw error

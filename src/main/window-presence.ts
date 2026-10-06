@@ -15,6 +15,7 @@
 
 import { execFile } from 'child_process'
 import type { WindowPresence } from './capture-guard'
+import type { WindowFlags } from './window-list'
 
 const PROBE_TIMEOUT_MS = 8000
 
@@ -69,6 +70,82 @@ export function probeWindowPresence(sourceId: string): Promise<WindowPresence | 
       (error, stdout) => {
         if (error) { console.warn('[Watch] window presence probe failed'); resolve(null); return }
         resolve(parsePresenceOutput(String(stdout)))
+      }
+    )
+  })
+}
+
+// ─── Window flags, for the window picker (window-list.ts) ────────────────────
+// One PowerShell run for the whole list (~0.4 s): is each window visible, cloaked
+// by the OS, a tool window (overlays), click-through, or never activatable?
+// Same rules as above: a FIXED script, handles validated as digits and passed
+// in one environment variable.
+
+const FLAGS_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class MyBuildyWindowFlags {
+  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr h, int i);
+  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int a, out int v, int s);
+}
+"@
+foreach ($s in $env:MYBUILDY_HWNDS.Split(',')) {
+  $h = [IntPtr][Int64]$s
+  if (-not [MyBuildyWindowFlags]::IsWindow($h)) { "$s gone"; continue }
+  $cloaked = 0
+  [void][MyBuildyWindowFlags]::DwmGetWindowAttribute($h, 14, [ref]$cloaked, 4)
+  $ex = [Int64][MyBuildyWindowFlags]::GetWindowLongPtr($h, -20)
+  "$s " + [int][MyBuildyWindowFlags]::IsWindowVisible($h) + [int]($cloaked -ne 0) + [int](($ex -band 0x80) -ne 0) + [int](($ex -band 0x20) -ne 0) + [int](($ex -band 0x08000000) -ne 0)
+}
+`
+
+/** Parse the flags probe: "<hwnd> <visible><cloaked><tool><transparent><noactivate>" or "<hwnd> gone" per line. */
+export function parseFlagsOutput(output: string): Map<string, WindowFlags> {
+  const flags = new Map<string, WindowFlags>()
+  for (const line of output.split(/\r?\n/)) {
+    const gone = /^(\d{1,20}) gone$/.exec(line.trim())
+    if (gone) {
+      flags.set(gone[1], { visible: false, cloaked: false, toolWindow: false, transparent: false, noActivate: false })
+      continue
+    }
+    const m = /^(\d{1,20}) ([01])([01])([01])([01])([01])$/.exec(line.trim())
+    if (!m) continue
+    flags.set(m[1], {
+      visible: m[2] === '1', cloaked: m[3] === '1', toolWindow: m[4] === '1', transparent: m[5] === '1', noActivate: m[6] === '1',
+    })
+  }
+  return flags
+}
+
+/**
+ * Flags for every window source id, keyed by source id. Null when they cannot
+ * be known (not Windows, or the probe failed): the picker then filters by name only.
+ */
+export function probeWindowFlags(sourceIds: string[]): Promise<Map<string, WindowFlags> | null> {
+  if (process.platform !== 'win32') return Promise.resolve(null)
+  const hwndToId = new Map<string, string>()
+  for (const id of sourceIds) {
+    const hwnd = hwndFromSourceId(id)
+    if (hwnd) hwndToId.set(hwnd, id)
+  }
+  if (hwndToId.size === 0) return Promise.resolve(new Map())
+  return new Promise((resolve) => {
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', FLAGS_SCRIPT],
+      { env: { ...process.env, MYBUILDY_HWNDS: [...hwndToId.keys()].join(',') }, timeout: PROBE_TIMEOUT_MS, windowsHide: true },
+      (error, stdout) => {
+        if (error) { console.warn('[Picker] window flags probe failed — filtering by name only'); resolve(null); return }
+        const byId = new Map<string, WindowFlags>()
+        for (const [hwnd, flags] of parseFlagsOutput(String(stdout))) {
+          const id = hwndToId.get(hwnd)
+          if (id) byId.set(id, flags)
+        }
+        resolve(byId)
       }
     )
   })

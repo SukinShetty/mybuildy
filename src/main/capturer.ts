@@ -12,6 +12,8 @@
 import { desktopCapturer } from 'electron'
 import type { WindowSource, CaptureResult } from '../renderer/src/types'
 import { findWatchedSource } from './capture-guard'
+import { pickableWindows } from './window-list'
+import { probeWindowFlags } from './window-presence'
 import { isBlankFrame } from './mac-permissions-core'
 
 // Picker thumbnails: small + lower quality to minimise exposure of other windows.
@@ -44,18 +46,23 @@ export async function listLiveWindowSources(): Promise<{ id: string; name: strin
 // ─── List windows (for user to pick from) ────────────────────────────────────
 
 /**
- * Returns all currently open windows as a list the user can pick from.
- * Thumbnails are low-resolution to reduce exposure of other apps' contents.
+ * The windows the user can pick from, fresh every call: never MyBuildy's own
+ * windows (`ownIds`) or system overlays, terminals and coding apps first
+ * (window-list.ts). Thumbnails are low-resolution to reduce exposure of other
+ * apps' contents.
  */
-export async function listOpenWindows(): Promise<WindowSource[]> {
-  const sources = await desktopCapturer.getSources({
-    types: ['window'],
-    thumbnailSize: THUMB_SIZE,
-    fetchWindowIcons: false,
-  })
+export async function listOpenWindows(ownIds: ReadonlySet<string>): Promise<WindowSource[]> {
+  const [sources, flags] = await Promise.all([
+    desktopCapturer.getSources({
+      types: ['window'],
+      thumbnailSize: THUMB_SIZE,
+      fetchWindowIcons: false,
+    }),
+    // Windows: ask the OS which of them are overlays or hidden (in parallel).
+    listLiveWindowSources().then((live) => probeWindowFlags(live.map((w) => w.id))),
+  ])
 
-  return sources
-    .filter((source) => source.name.trim().length > 0)
+  return pickableWindows(sources, ownIds, flags)
     .map((source) => ({
       id: source.id,
       name: source.name,

@@ -12,6 +12,7 @@ import { useAppStore } from '../store/useAppStore'
 import { GuidanceSections } from '../components/GuidanceSections'
 import { PromptCard } from '../components/PromptCard'
 import { WindowPicker } from '../components/WindowPicker'
+import { useRefreshWhileOpen } from '../components/useRefreshWhileOpen'
 import { CAPTURE_NOTICE_MESSAGE } from '../types'
 import type { WindowSource } from '../types'
 
@@ -33,6 +34,12 @@ export function GuidanceWorkspace(): React.ReactElement {
   const projectIsConfigured = project.projectName.trim().length > 0
   const watching = watchStatus.windowName !== null
   const isAnalyzing = watchStatus.analyzing
+
+  // A window closed while the picker is open disappears from it.
+  useRefreshWhileOpen(picker !== null, async () => {
+    const fresh = await window.mybuildy.listWindows()
+    setPicker((open) => (open ? { ...open, windows: fresh } : null))
+  })
 
   // ─── Choosing the window (the same one the robot watches) ─────────────────
 
