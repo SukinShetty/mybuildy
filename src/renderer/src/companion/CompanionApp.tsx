@@ -115,7 +115,9 @@ export function CompanionApp(): React.ReactElement {
       setWatchStatus(s)
       if (!s.windowName) { clearAnalysis(); resetMascotSignals(); window.mybuildy.hideGuidance() }
     }
-    void window.mybuildy.getWatchStatus().then(({ status }) => applyWatchStatus(status))
+    // The status on opening: just take it. Nothing has been shown yet to clear, and
+    // a late reply must never wipe an analysis or badge that arrived meanwhile.
+    void window.mybuildy.getWatchStatus().then(({ status }) => setWatchStatus(status))
     void window.mybuildy.getVoiceFallback().then(setVoiceFallback)
     const unsubs = [
       window.mybuildy.onVoiceFallback(setVoiceFallback),
