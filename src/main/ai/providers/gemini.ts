@@ -17,6 +17,7 @@ import type { AIProvider, ProviderInfo } from '../provider-interface'
 import { buildAnalysisSystemPrompt, buildAnalysisUserPrompt, buildBrainstormSystemPrompt } from '../prompt-builder'
 import { parseAnalysisResponse, tryExtractProjectData } from '../response-parser'
 import { fetchWithTimeout } from '../fetch-with-timeout'
+import { ANALYSIS_MAX_OUTPUT_TOKENS } from '../request-shape'
 
 export const geminiProviderInfo: ProviderInfo = {
   type: 'gemini',
@@ -54,7 +55,7 @@ export class GeminiProvider implements AIProvider {
     const requestBody = {
       system_instruction: { parts: [{ text: systemPrompt }] },
       contents: [{ role: 'user', parts }],
-      generationConfig: { maxOutputTokens: 1500 },
+      generationConfig: { maxOutputTokens: ANALYSIS_MAX_OUTPUT_TOKENS },
     }
 
     const responseText = await this.callAPI(requestBody, settings)

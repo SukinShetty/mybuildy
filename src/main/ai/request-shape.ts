@@ -60,3 +60,11 @@ export function chatCompletionLimits(
     ? { max_completion_tokens: visibleTokens + REASONING_HEADROOM_TOKENS }
     : { max_tokens: visibleTokens }
 }
+
+/**
+ * Room for one screen analysis's answer. A full analysis (every field plus a
+ * long, specific next prompt) can pass 1500 tokens; when it did, the JSON was
+ * cut off and the user got "MyBuildy had trouble reading the response". Only
+ * the tokens actually used are billed, so the higher cap costs nothing extra.
+ */
+export const ANALYSIS_MAX_OUTPUT_TOKENS = 4000

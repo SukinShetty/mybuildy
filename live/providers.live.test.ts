@@ -144,7 +144,7 @@ for (const { provider, keyName } of PROVIDERS) {
             settingsFor(modelId)
           )
           const usable = analysis.screenContentVisible && analysis.whatIsHappening.trim().length > 10
-            && !analysis.whatItMeans.includes('had trouble reading the response')
+            && !analysis.whatIsHappening.includes("couldn't read the AI's answer")
           row.analysis = usable ? 'PASS' : 'FAIL'
           expect(usable, `analysis was not usable: ${analysis.whatIsHappening.slice(0, 120)}`).toBe(true)
         } catch (error) {

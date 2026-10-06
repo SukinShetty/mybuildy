@@ -17,6 +17,7 @@ import type { AIProvider, ProviderInfo } from '../provider-interface'
 import { buildAnalysisSystemPrompt, buildAnalysisUserPrompt, buildBrainstormSystemPrompt } from '../prompt-builder'
 import { parseAnalysisResponse, tryExtractProjectData } from '../response-parser'
 import { fetchWithTimeout } from '../fetch-with-timeout'
+import { ANALYSIS_MAX_OUTPUT_TOKENS } from '../request-shape'
 
 export const anthropicProviderInfo: ProviderInfo = {
   type: 'anthropic',
@@ -42,7 +43,7 @@ export class AnthropicProvider implements AIProvider {
 
     const requestBody = {
       model: settings.modelId,
-      max_tokens: 1500,
+      max_tokens: ANALYSIS_MAX_OUTPUT_TOKENS,
       system: systemPrompt,
       messages: [
         {

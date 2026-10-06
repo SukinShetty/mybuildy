@@ -346,6 +346,12 @@ function AnalysisBody({
               {guard.reason} Click {sendActionLabel} again to paste it anyway.
             </div>
           )}
+          {/* Paste is off right now: say why where people look, not only in a tooltip. */}
+          {sendDisabled && sendState !== 'sending' && sendEligibility.sendBlockedReason && (
+            <div style={S.sendError} data-testid="paste-blocked">
+              Paste is off: {sendEligibility.sendBlockedReason.replace(/\.$/, '')}. Use Copy instead.
+            </div>
+          )}
           {pastedNote && <div style={S.pastedNote} role="status">{PASTE_SUCCESS_MESSAGE}</div>}
           {sendError && <div style={S.sendError}>{sendError}</div>}
           {permissionNeeded && <PermissionNotice permission={permissionNeeded} />}

@@ -25,8 +25,17 @@ function agentLabel(analysis: AnalysisResult | null): string {
 
 const capitalized = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1)
 
+// Paste is offered only when the agent is waiting for a prompt (prompt-sender-core.ts);
+// otherwise the prompt is there to copy.
+function pasteLine(a: AnalysisResult | null): string {
+  return a?.terminalState === 'awaiting_prompt'
+    ? 'Your prompt is ready — click Paste into terminal'
+    : 'Your prompt is ready — copy it from the panel'
+}
+
 export function nextStepLabel(i: NextStepInput): string {
-  if (i.pastedJustNow) return 'Pasted — now press Enter in your terminal'
+  // Pasted, and nothing newer seen yet: the user's step is Enter (MyBuildy never presses it).
+  if (i.pastedJustNow || (i.promptAlreadyPasted && !i.thinking)) return 'Pasted — now press Enter in your terminal'
   if (i.needsSetup) return 'Next: finish setting me up — click the gear'
   if (i.watchedWindowName && i.thinking) return 'Thinking about what just happened…'
   if (i.watchedSourceMessage) return i.watchedSourceMessage
@@ -34,17 +43,17 @@ export function nextStepLabel(i: NextStepInput): string {
 
   const a = i.analysis
   const agent = agentLabel(a)
-  const promptReady = !!a?.nextPrompt?.trim() && !i.promptAlreadyPasted
+  const promptReady = !!a?.nextPrompt?.trim()
   if (i.isPaused) {
     // Auto off: what the last look found still stands if it's something to do now.
     if (a?.needsHumanJudgment) return 'Next: answer the question in the panel'
-    if (promptReady) return 'Your prompt is ready — click Paste into terminal'
+    if (promptReady) return pasteLine(a)
     return 'Paused — click Resume to keep watching'
   }
   if (!a) return `Watching ${agent} — first look coming up`
   if (a.terminalState === 'permission_prompt') return `${capitalized(agent)} is asking you something — answer it in the terminal`
-  if (a.terminalState === 'working' || i.promptAlreadyPasted) return `Waiting for ${agent} to finish`
+  if (a.terminalState === 'working') return `Waiting for ${agent} to finish`
   if (a.needsHumanJudgment) return 'Next: answer the question in the panel'
-  if (promptReady) return 'Your prompt is ready — click Paste into terminal'
+  if (promptReady) return pasteLine(a)
   return `Watching ${agent} — I'll tell you the next step`
 }

@@ -18,7 +18,7 @@ import type { AIProvider, ProviderInfo } from '../provider-interface'
 import { buildAnalysisSystemPrompt, buildAnalysisUserPrompt, buildBrainstormSystemPrompt } from '../prompt-builder'
 import { parseAnalysisResponse, tryExtractProjectData } from '../response-parser'
 import { fetchWithTimeout } from '../fetch-with-timeout'
-import { chatCompletionLimits } from '../request-shape'
+import { chatCompletionLimits, ANALYSIS_MAX_OUTPUT_TOKENS } from '../request-shape'
 
 // ─── Provider info definitions ───────────────────────────────────────────────
 
@@ -97,7 +97,7 @@ export class OpenAICompatibleProvider implements AIProvider {
 
     const requestBody = {
       model: settings.modelId,
-      ...chatCompletionLimits(this.info.type, settings.modelId, 1500),
+      ...chatCompletionLimits(this.info.type, settings.modelId, ANALYSIS_MAX_OUTPUT_TOKENS),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userContent },

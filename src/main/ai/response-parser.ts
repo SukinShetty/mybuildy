@@ -359,13 +359,14 @@ function toStrArray(value: unknown): string[] {
 function buildFallbackAnalysisResult(rawText: string, startTime: number): AnalysisResult {
   return {
     screenContentVisible: false,
-    whatIsHappening: rawText.slice(0, 300),
-    whatItMeans: 'MyBuildy had trouble reading the response. Try analyzing again.',
+    // Never the raw answer (it can be half a JSON object): plain words only.
+    whatIsHappening: "MyBuildy couldn't read the AI's answer this time.",
+    whatItMeans: 'Nothing is wrong with your project — the answer came back incomplete.',
     whatIsBuilt: [],
     whatIsMissing: [],
     whatIsBroken: [],
     whereUserIsStuck: null,
-    bestNextMove: 'Click "Analyze Now" again to get a fresh read.',
+    bestNextMove: 'Look again: click Analyze Now in the Guidance tab, or wait — while watching, MyBuildy looks again by itself.',
     nextPrompt: '',
     builderNote: 'No worries — sometimes it takes a second try!',
     terminalState: 'unknown',
