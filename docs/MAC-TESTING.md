@@ -12,22 +12,9 @@ You will need: a Mac (Apple Silicon or Intel), a terminal app (Terminal, iTerm2,
    - **Apple Silicon** (Apple menu > About This Mac says "Chip: Apple M…"): `MyBuildy-0.1.0-arm64.dmg`
    - **Intel** ("Processor: Intel…"): `MyBuildy-0.1.0-x64.dmg`
 2. Open the DMG and drag **MyBuildy** into **Applications**.
-3. The app is not notarized by Apple, so macOS blocks the first launch. On **macOS 15 Sequoia and later**:
-   1. Double-click **MyBuildy** in Applications. macOS says it was **"Not Opened"** — click **Done** (not Move to Trash).
-   2. Open **System Settings → Privacy & Security**, scroll to the bottom, and next to **"MyBuildy was blocked to protect your Mac"** click **Open Anyway**.
-   3. Enter your password, then click **Open Anyway** again — within about an hour of step 1.
+3. Open **MyBuildy** from Applications. The app is signed with an Apple Developer ID and notarized by Apple, so it opens normally — macOS only asks once whether you want to open an app downloaded from the internet; click **Open**.
 
-   On **macOS 14 Sonoma**: right-click (or Control-click) **MyBuildy** in Applications, choose **Open**, then **Open** again. After this once, double-click works.
-
-### If macOS says "MyBuildy is damaged and can't be opened"
-
-That is macOS's download quarantine on an app that isn't notarized — the file is fine. Open **Terminal** and run:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/MyBuildy.app
-```
-
-Then open MyBuildy again.
+*If macOS blocks it instead* (for example "MyBuildy cannot be opened" or "is damaged"), that is a bug in the build: don't work around it — send a screenshot (see [section 3](#3-if-something-fails-what-to-send)).
 
 ---
 
@@ -45,7 +32,7 @@ macOS may also ask whether MyBuildy can use the **"MyBuildy Safe Storage"** keyc
 
 **To quit** (needed after granting Screen Recording): press **Cmd+Q** while MyBuildy is the active app, or right-click the Dock icon > **Quit**, or use the menu bar icon > **Quit MyBuildy**. Check the Dock: the icon's dot should disappear.
 
-**If you install a newer build later:** the app is ad-hoc signed, so macOS treats each build as a new app and forgets these permissions, even if the switch in System Settings still looks **on**. In each list, select MyBuildy, click **−**, then add it again with **+** (or toggle it back on). The Keychain may ask again too.
+**If you install a newer build later:** the permissions should carry over, because every build is signed with the same Developer ID. If MyBuildy says one is missing while the switch in System Settings still looks **on**, select MyBuildy in that list, click **−**, then add it again with **+** — and tell us, because that shouldn't happen.
 
 ---
 
