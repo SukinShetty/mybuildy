@@ -188,8 +188,10 @@ export async function launchMyBuildy(options: LaunchOptions = {}): Promise<MyBui
     const deadline = Date.now() + 30_000
     for (;;) {
       for (const page of app.windows()) {
+        // The e2e fakes' stand-in terminal (a data: page) is not one of MyBuildy's windows.
+        if (!page.url() || page.url().startsWith('data:')) continue
         const kind = windowKind(page.url())
-        if (page.url() && !pages[kind]) pages[kind] = page
+        if (!pages[kind]) pages[kind] = page
       }
       if (pages.main && pages.companion && pages.guidance && pages.voice) break
       if (Date.now() > deadline) {

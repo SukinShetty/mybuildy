@@ -57,7 +57,7 @@ test('ElevenLabs out of credits: the robot says so with the reason, and Open Set
   await notice.getByRole('button', { name: 'Open Settings' }).click()
   await expect(page.getByTestId('settings-voice-fallback')).toContainText('Your ElevenLabs credits for this month are used up.')
   await expect.poll(() => m.app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows().find((b) => !/companion=|guidance=|voice=/.test(b.webContents.getURL()))!.isVisible())).toBe(true)
+    BrowserWindow.getAllWindows().find((b) => !/companion=|guidance=|voice=|^data:/.test(b.webContents.getURL()))!.isVisible())).toBe(true)
 
   // Logged for diagnosis (the reason only — never the key or the spoken text).
   const userData = await m.app.evaluate(({ app }) => app.getPath('userData'))

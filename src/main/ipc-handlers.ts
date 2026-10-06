@@ -8,7 +8,7 @@ import { providerHttpError, readJson, mapProviderError } from './ai/provider-err
 import { providerFetch, withCancellation, CancelledError } from './ai/fetch-with-timeout'
 import { guardedSender } from './project-guard'
 import { watchLogDir } from './watch-log'
-import { e2eFakes, FAKE_MODELS } from './e2e-fakes'
+import { e2eFakes, FAKE_MODELS, fakeTerminalSourceId } from './e2e-fakes'
 import { hideRobot } from './robot-visibility'
 import { applyRobotScale, getRobotScale } from './companion-window'
 import { saveRobotScale } from './robot-prefs'
@@ -136,6 +136,8 @@ export function registerIpcHandlers(
     try {
       // Never offer MyBuildy's own windows (robot, panel, main, voice).
       const ownIds = new Set(ElectronWindow.getAllWindows().map((w) => w.getMediaSourceId()))
+      const fakeTerminal = fakeTerminalSourceId() // e2e only: the stand-in window to watch
+      if (fakeTerminal) ownIds.delete(fakeTerminal)
       return await listOpenWindows(ownIds)
     } catch (error) {
       console.error('[IPC] LIST_WINDOWS error:', error)

@@ -23,6 +23,7 @@ import { isModelConfigured } from '../renderer/src/types'
 import { debugLog } from './debug-log'
 import { isSafeExternalUrl, isAllowedAppNavigation, isBlockedDevShortcut } from './navigation-guard'
 import { registerE2eTestHooks } from './e2e-hooks'
+import { openFakeTerminalWindow } from './e2e-fakes'
 import { macAppMenuTemplate, macDockMenuTemplate, type MenuActions } from './app-menu'
 import { createShutdown } from './app-shutdown'
 import { showRobot, hideRobot, isRobotHidden, robotWindowMinimized, robotWindowRestored } from './robot-visibility'
@@ -352,6 +353,7 @@ app.whenReady().then(async () => {
 
   // e2e-only fixture hooks (no-op unless MYBUILDY_E2E=1 and not packaged).
   registerE2eTestHooks(() => companionWindow)
+  openFakeTerminalWindow() // e2e fakes only: a window to watch on a bare CI machine
 
   // First launch (or setup not finished): open the panel automatically — it
   // shows the setup wizard (setup-state.ts), resuming at the saved step after
