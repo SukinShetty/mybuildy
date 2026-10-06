@@ -117,6 +117,12 @@ let currentSession = 0
 // grading, verification, spoken questions) the moment the user presses Stop.
 let watchAbort = new AbortController()
 let inFlight = false
+// Analyze Now pressed while another look was running: it is owed an analysis.
+// If that look ends without one (screen unchanged, window missing…), a manual
+// look runs straight after (runCycleAndReschedule).
+let analyzeNowOwed = false
+// Whether the cycle in flight put a new analysis on display.
+let displayedThisCycle = false
 let getSettingsFn: (() => Promise<AppSettings>) | null = null
 let getGoalFn: (() => Promise<Goal | null>) | null = null
 
@@ -344,7 +350,10 @@ export function startWatching(
  */
 export function analyzeNow(): AnalyzeNowResult {
   if (!getWatchStatus().windowName || !companionRef || companionRef.isDestroyed()) return 'no-window'
-  if (inFlight) return 'already-running'
+  if (inFlight) {
+    analyzeNowOwed = true // answered by this look's result, or by a look straight after it
+    return 'already-running'
+  }
   if (loopTimer) { clearTimeout(loopTimer); loopTimer = null }
   void runCycleAndReschedule(companionRef, currentSession, 'manual')
   return 'started'
@@ -369,6 +378,8 @@ async function runCycleAndReschedule(companionWindow: BrowserWindow, mySession: 
       ensureTurnPoll(companionWindow, mySession)
     } else {
       inFlight = true
+      displayedThisCycle = false
+      if (mode === 'manual') analyzeNowOwed = false
       try {
         await withCancellation(watchAbort.signal, () => runOneAnalysisCycle(companionWindow, mySession, mode === 'manual'))
       } catch (error) {
@@ -377,6 +388,15 @@ async function runCycleAndReschedule(companionWindow: BrowserWindow, mySession: 
       } finally {
         inFlight = false
         setAnalysisRunning(false)
+      }
+      // Analyze Now was pressed during this look. A new analysis answers it;
+      // otherwise run it now, so the click is never lost.
+      if (analyzeNowOwed) {
+        analyzeNowOwed = false
+        if (!displayedThisCycle && mySession === currentSession) {
+          if (loopTimer) { clearTimeout(loopTimer); loopTimer = null }
+          return runCycleAndReschedule(companionWindow, mySession, 'manual')
+        }
       }
     }
   }
@@ -910,6 +930,7 @@ async function runOneAnalysisCycle(
   displayAnalysis = prepareForDisplay(analysis)
   displaySession = mySession
   // The analysis is done: the robot stops "working" as it gets the result.
+  displayedThisCycle = true
   setAnalysisRunning(false)
   sendDisplayAnalysis(companionWindow, displayAnalysis)
   if (!companionWindow.isDestroyed()) noteAnalysisForRobot(displayAnalysis) // robot hidden → a system notification for alerts
@@ -1051,6 +1072,7 @@ function clearStaleState(): void {
   displayAnalysis = null
   consecutiveAuthErrors = 0
   errorLabelShown = false
+  analyzeNowOwed = false
 }
 
 function notifyCompanionState(w: BrowserWindow, state: 'idle' | 'thinking' | 'speaking'): void {
