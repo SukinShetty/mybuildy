@@ -121,6 +121,24 @@ describe('one watch for the robot and the Guidance tab', () => {
     expect(getWatchStatus()).toMatchObject({ windowName: 'Terminal', auto: false, analyzing: false })
   })
 
+  it('Analyze Now during a look that ends with no analysis (screen unchanged) still gets its analysis', async () => {
+    watch(true)
+    await vi.advanceTimersByTimeAsync(1100) // the first look (an analysis)
+    expect(mocks.analyzeScreen).toHaveBeenCalledTimes(1)
+    // The next scheduled look: same screen, so it ends without analysing — but
+    // Analyze Now is pressed while it is capturing.
+    let release: () => void = () => {}
+    mocks.captureWatchedWindow.mockImplementationOnce(() => new Promise((resolve) => {
+      release = () => resolve({ imageBase64: 'AAAA', windowTitle: 'Terminal', sourceId: 'window:1:0', capturedAt: '2026-01-01T00:00:00Z' })
+    }) as never)
+    await vi.advanceTimersByTimeAsync(10_000) // the 10 s cycle starts and waits on its capture
+    expect(analyzeNow()).toBe('already-running')
+    release()
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(mocks.analyzeScreen).toHaveBeenCalledTimes(2) // the click was answered with an analysis
+    expect(tabAnalyses).toHaveLength(2)
+  })
+
   it('Auto on/off is the robot watching or paused, and every change reaches both windows', async () => {
     watch(true)
     await vi.advanceTimersByTimeAsync(1100)

@@ -28,6 +28,9 @@ export function GuidanceWorkspace(): React.ReactElement {
   // The one-time capture notice, shown before the first window is watched.
   const [noticePending, setNoticePending] = useState<{ win: WindowSource; purpose: PickPurpose } | null>(null)
   const [pickError, setPickError] = useState<string | null>(null)
+  // Analyze Now while a look is already under way: say so (its result, or a
+  // look right after it, answers the click — analysis-loop.ts).
+  const [alreadyLooking, setAlreadyLooking] = useState(false)
 
   // settings is REDACTED (no raw keys) — check the has* boolean + base URL.
   const apiIsConfigured = settings.hasApiKey || settings.baseUrl.trim().length > 0
@@ -93,6 +96,10 @@ export function GuidanceWorkspace(): React.ReactElement {
     setPickError(null)
     const result = await window.mybuildy.analyzeNow()
     if (result === 'no-window') await openPicker('analyze')
+    if (result === 'already-running') {
+      setAlreadyLooking(true)
+      setTimeout(() => setAlreadyLooking(false), 4000)
+    }
   }
 
   async function handleAutoClick(): Promise<void> {
@@ -220,6 +227,11 @@ export function GuidanceWorkspace(): React.ReactElement {
 
         {/* Analyzing in-progress */}
         {isAnalyzing && <LoadingCard />}
+        {!isAnalyzing && alreadyLooking && (
+          <div style={styles.loadingCard} role="status">
+            <span style={styles.loadingText}>MyBuildy is already looking at your coding agent — the result shows here as soon as it&apos;s ready.</span>
+          </div>
+        )}
 
         {/* Results */}
         {latestAnalysis && (
