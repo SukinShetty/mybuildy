@@ -83,8 +83,8 @@
       ],
       "icon": "build/icon.icns",
       "category": "public.app-category.developer-tools",
-      "identity": null,
-      "hardenedRuntime": false,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
@@ -93,7 +93,8 @@
       }
     },
     "dmg": {
-      "artifactName": "MyBuildy-${version}-${arch}.${ext}"
+      "artifactName": "MyBuildy-${version}-${arch}.${ext}",
+      "sign": true
     },
     "publish": null
   }

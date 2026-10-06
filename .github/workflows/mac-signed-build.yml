@@ -1,0 +1,58 @@
+# mac-signed-build.yml — manual test of Mac signing and notarization.
+#
+# Run from the Actions tab (or `gh workflow run mac-signed-build.yml`). Builds
+# both DMGs (Apple Silicon + Intel) exactly as release.yml does — Developer ID
+# signed with the hardened runtime, each .app and each DMG notarized and
+# stapled, every signature and ticket checked — and uploads them as WORKFLOW
+# ARTIFACTS ONLY. It never creates, edits or uploads to a release, and needs no
+# tag. Use it to hand a signed build to a Mac tester.
+
+name: Mac signed build (test)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-signed-dmg:
+    if: github.repository == 'SukinShetty/mybuildy'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # --legacy-peer-deps is required (same as ci.yml and release.yml).
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Build
+        run: npm run build
+
+      - name: Package macOS DMGs (arm64 + x64), signed and notarized
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npx electron-builder --mac dmg --arm64 --x64 --publish never
+
+      - name: Notarize and staple the DMGs; verify every signature
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash scripts/mac-notarize-dmgs.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mybuildy-mac-signed-dmgs
+          path: dist/MyBuildy-*.dmg
+          if-no-files-found: error
+          retention-days: 30

@@ -1,7 +1,7 @@
 # release.yml — installers on version tags (v*), on ONE release per tag.
 #
 # Two build jobs run on the same tag — Windows (NSIS installer) and macOS (DMG
-# for Apple Silicon and Intel, ad-hoc signed, not notarized) — and upload their
+# for Apple Silicon and Intel, Developer ID signed, notarized and stapled) — and upload their
 # files as workflow artifacts. A single final job then writes one
 # SHA256SUMS.txt over every file and puts the files on the release. Only that
 # job talks to the Releases API, so two jobs can never race.
@@ -86,24 +86,31 @@ jobs:
       - name: Build
         run: npm run build
 
-      # No Apple Developer certificate: electron-builder's own signing is off
-      # (mac.identity null) and scripts/after-pack.js ad-hoc signs the .app.
-      - name: Package macOS DMGs (arm64 + x64)
+      # Developer ID signing (hardened runtime) and notarization of each .app:
+      # electron-builder reads the certificate from CSC_LINK/CSC_KEY_PASSWORD
+      # and notarizes with the APPLE_* credentials (repository secrets).
+      - name: Package macOS DMGs (arm64 + x64), signed and notarized
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx electron-builder --mac dmg --arm64 --x64 --publish never
 
       # Tag, package.json and the packaged apps must all carry the same version.
       - name: Check versions agree
         run: node scripts/check-release-version.mjs ${{ github.ref_name }}
 
-      - name: Verify the ad-hoc signature of each packaged app
-        run: |
-          for app in dist/mac*/MyBuildy.app; do
-            echo "== $app"
-            codesign --verify --deep --strict --verbose=2 "$app"
-            codesign -dv "$app" 2>&1 | grep -E 'Identifier|Signature|Format'
-          done
+      # Checks each app's Developer ID signature, hardened runtime and stapled
+      # ticket, then notarizes, staples and checks each DMG. Fails the job on
+      # anything less, so an unsigned build can never reach the release.
+      - name: Notarize and staple the DMGs; verify every signature
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash scripts/mac-notarize-dmgs.sh
 
       - uses: actions/upload-artifact@v4
         with:

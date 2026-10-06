@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  macOS entitlements for MyBuildy.app (attached by scripts/after-pack.js).
+  macOS entitlements for MyBuildy.app, applied when electron-builder signs it
+  with the Developer ID certificate under the hardened runtime (CI), or by
+  scripts/after-pack.js for an ad-hoc local build.
   - Electron's V8 needs JIT / unsigned executable memory under a hardened runtime.
+  - disable-library-validation: Electron loads its own frameworks and helpers.
   - apple-events: Send drives System Events (Cmd+V, Return) via osascript.
   - audio-input: click-to-talk microphone.
   Screen capture has NO entitlement: macOS grants it only through
