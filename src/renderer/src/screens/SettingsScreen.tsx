@@ -17,7 +17,6 @@ import { useAppStore } from '../store/useAppStore'
 import { RobotSizeSetting } from '../components/RobotSizeSetting'
 import type { ProviderType, NonSecretSettings, SecretName, ModelChoice, VoiceFallback } from '../types'
 import {
-  VOICE_FALLBACK_HEADLINE,
   HOURLY_CALL_CAP_MIN, HOURLY_CALL_CAP_MAX, NO_SECURE_STORAGE_MESSAGE, API_CREDITS_NOTE, PROVIDER_BILLING_URLS,
   dataDestinationNote, suggestsNextModel,
 } from '../types'
@@ -594,17 +593,24 @@ export function SettingsScreen(): React.ReactElement {
           />
         </div>
 
-        {/* ElevenLabs voice (optional) */}
+        {/* Voice: Buildy's own voice (Bella) by default; ElevenLabs optional */}
         <div style={styles.section}>
-          <div style={styles.sectionLabel}>Voice (ElevenLabs)</div>
-          <div style={styles.sectionHint}>
-            Optional. Adds natural, warm voice + the mic button. Without a key, MyBuildy uses your computer's voice.
+          <div style={styles.sectionLabel}>Voice</div>
+          <div style={styles.voiceDefault} data-testid="voice-default">
+            <strong>Buildy&apos;s voice: Bella</strong>
+            {settings.hasElevenLabsKey
+              ? ' — free, on your computer. Speaks if ElevenLabs stops working.'
+              : ' (default) — free, on your computer. Nothing to set up.'}
           </div>
           {voiceFallback && (
             <div style={styles.voiceFallback} role="alert" data-testid="settings-voice-fallback">
-              <strong>{VOICE_FALLBACK_HEADLINE}.</strong> {voiceFallback.reason}
+              <strong>{voiceFallback.headline}.</strong> {voiceFallback.reason}
             </div>
           )}
+          <div style={styles.voiceOptionLabel}>ElevenLabs (your own key) — optional</div>
+          <div style={styles.sectionHint}>
+            With a key, MyBuildy speaks with the ElevenLabs voice you choose here, and the mic button appears.
+          </div>
           {settings.hasElevenLabsKey && !replacingElevenKey ? (
             <div style={styles.keySavedRow}>
               <span style={styles.keySavedBadge}>Saved</span>
@@ -1073,6 +1079,19 @@ const styles = {
     alignItems: 'center',
     gap: 8,
     flexWrap: 'wrap' as const,
+  },
+  voiceDefault: {
+    fontSize: 13,
+    lineHeight: 1.45,
+    color: 'var(--color-text)',
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  voiceOptionLabel: {
+    fontSize: 12,
+    fontWeight: 600,
+    color: 'var(--color-text)',
+    marginTop: 6,
   },
   voiceFallback: {
     marginTop: 6,

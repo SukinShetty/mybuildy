@@ -17,6 +17,7 @@ import { createGuidanceWindow, destroyGuidanceWindow, showLastGuidance } from '.
 import { stopAnalysisLoop } from './analysis-loop'
 import { initProjects } from './projects'
 import { createVoicePlayerWindow, destroyVoicePlayer, stopVoice } from './voice-player'
+import { startKokoro, stopKokoro } from './kokoro-engine'
 import { migratePlaintextSecrets } from './secure-store'
 import { settingsFilePath, loadRedactedSettings, loadGoal } from './memory'
 import { isModelConfigured } from '../renderer/src/types'
@@ -137,7 +138,7 @@ const cleanUpForQuit = createShutdown({
     companionWindow = null
   },
   destroyGuidance: () => { destroyGuidanceWindow(); guidanceWindow = null },
-  destroyVoicePlayer: () => { destroyVoicePlayer(); voicePlayerWindow = null },
+  destroyVoicePlayer: () => { destroyVoicePlayer(); stopKokoro(); voicePlayerWindow = null },
   destroyMainWindow: () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy()
     mainWindow = null
@@ -350,6 +351,9 @@ app.whenReady().then(async () => {
 
   // Local diagnostic log of watch/send state changes (Settings → Open log folder).
   initWatchLog(app.getPath('userData'))
+
+  // Buildy's own voice: load the bundled model now and keep it loaded.
+  startKokoro()
 
   // e2e-only fixture hooks (no-op unless MYBUILDY_E2E=1 and not packaged).
   registerE2eTestHooks(() => companionWindow)

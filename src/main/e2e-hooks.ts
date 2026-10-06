@@ -16,6 +16,7 @@ import { app, type BrowserWindow } from 'electron'
 import { showGuidanceWindow } from './guidance-window'
 import { e2eFakes, fakeAnalysisCalls, type E2eFakes } from './e2e-fakes'
 import { pressRobotShortcut } from './robot-shortcut'
+import { enqueueSpeech } from './voice-player'
 import type { SetupPermissions } from './setup-permissions'
 import { IPC, type AnalysisResult } from '../renderer/src/types'
 
@@ -60,6 +61,8 @@ interface E2eHooks {
   setFakePermissions(p: Partial<SetupPermissions>): void
   /** How many screen analyses the fake provider has answered. */
   fakeAnalysisCalls(): number
+  /** Speak a line through the real voice queue (the voice order picks the engine). */
+  speak(text: string): void
 }
 
 /** Register the gated e2e test hooks. No-op outside MYBUILDY_E2E=1 dev runs. */
@@ -88,6 +91,7 @@ export function registerE2eTestHooks(getCompanionWindow: () => BrowserWindow | n
     pressRobotShortcut: () => pressRobotShortcut(),
     setupFakes: () => e2eFakes(),
     fakeAnalysisCalls: () => fakeAnalysisCalls,
+    speak: (text: string) => enqueueSpeech({ id: `e2e-${Date.now()}`, text }),
     setFakePermissions(p: Partial<SetupPermissions>): void {
       const fakes = e2eFakes()
       if (fakes) Object.assign(fakes.permissions, p)

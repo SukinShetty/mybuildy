@@ -533,7 +533,8 @@ export interface WatchStatus {
 // failed (main/voice-health.ts). Shown on the robot and in Settings; never silent.
 export interface VoiceFallback {
   code: string
-  reason: string   // plain English: why ElevenLabs didn't work
+  headline: string // which voice failed and which one speaks instead
+  reason: string   // plain English: why
 }
 export const VOICE_FALLBACK_HEADLINE = "Your voice key isn't working, so MyBuildy is using your computer's voice"
 

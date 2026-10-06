@@ -34,3 +34,6 @@ test-results/
 
 # live provider test output (npm run test:live)
 live/last-results.md
+
+# Buildy's voice model (scripts/fetch-kokoro-model.mjs; bundled into the installer)
+resources/kokoro/

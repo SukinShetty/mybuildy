@@ -31,6 +31,15 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
+      - name: Cache Buildy's voice model
+        uses: actions/cache@v4
+        with:
+          path: resources/kokoro
+          key: kokoro-fp16-1939ad2a8e416c0acfeecc08a694d14ef25f2231
+
+      - name: Fetch Buildy's voice model (pinned revision, SHA-256 checked)
+        run: npm run fetch:voice
+
       - name: Build
         run: npm run build
 
@@ -49,6 +58,17 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: bash scripts/mac-notarize-dmgs.sh
+
+      # Run the signed, notarized apps: Buildy's voice engine must load inside
+      # each of them (Apple Silicon natively; Intel under Rosetta when available).
+      - name: Buildy's voice loads inside the signed apps
+        run: |
+          MYBUILDY_E2E_EXE="$PWD/dist/mac-arm64/MyBuildy.app/Contents/MacOS/MyBuildy" npx playwright test e2e/buildy-voice.spec.ts
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            MYBUILDY_E2E_EXE="$PWD/dist/mac/MyBuildy.app/Contents/MacOS/MyBuildy" npx playwright test e2e/buildy-voice.spec.ts
+          else
+            echo "Rosetta is not available on this runner: the Intel app's engine signature is checked above, not run."
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
