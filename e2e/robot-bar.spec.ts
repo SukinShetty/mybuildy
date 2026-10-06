@@ -62,21 +62,31 @@ test('toolbar icons are near-white at rest and orange on hover; Hide then Quit s
   expect(await buttons.nth(0).evaluate((e) => getComputedStyle(e).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)')
 })
 
-test('Settings → Robot size: Large is 1.5× (robot, bar, icons and text zoom together)', async () => {
+test('Settings → Robot size slider: 150% zooms robot, bar, icons and text together; Reset goes back to 100%', async () => {
   const before = await robotWindow(m)
   mediumWidth = before.bounds.width
   near(mediumWidth, 340)
   expect(before.zoom).toBeCloseTo(1)
   await openSettings(m)
-  await m.main.getByRole('radio', { name: 'Large' }).click()
+  const slider = m.main.getByRole('slider', { name: 'Robot size' })
+  await expect(slider).toHaveAttribute('min', '60')
+  await expect(slider).toHaveAttribute('max', '200')
+  await slider.fill('150')
   await expect.poll(async () => (await robotWindow(m)).zoom).toBeCloseTo(1.5)
   const after = await robotWindow(m)
   near(after.bounds.width, mediumWidth * 1.5)
   near(after.bounds.height, 450)
-  expect(after.zoom).toBeCloseTo(1.5)
-  await expect(m.main.getByRole('radio', { name: 'Large' })).toHaveAttribute('aria-checked', 'true')
+  await expect(m.main.getByText('150%', { exact: true })).toBeVisible()
   await expectBarFits(m)
-  await expect(m.companion.getByRole('status')).toHaveText('Robot size: Large')
+  await expect(m.companion.getByRole('status')).toHaveText('Robot size: 150%')
+
+  await m.main.getByRole('button', { name: 'Reset' }).click()
+  await expect.poll(async () => (await robotWindow(m)).zoom).toBeCloseTo(1)
+  await expect(slider).toHaveValue('100')
+  await expect(m.main.getByRole('button', { name: 'Reset' })).toBeDisabled()
+
+  await slider.fill('150') // back to 150% for the zoom test below
+  await expect.poll(async () => (await robotWindow(m)).zoom).toBeCloseTo(1.5)
 })
 
 test('Ctrl/Cmd + scroll wheel over the robot zooms it and shows the size', async () => {

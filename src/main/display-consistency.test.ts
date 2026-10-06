@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { AnalysisResult } from '../renderer/src/types'
-import {
+import { isGoalReached,
   HANDOFF_FALLBACK, userFacingHandoff, claimsGoalReached, reconcileWithVerdict, prepareForDisplay,
 } from './display-consistency'
 import { buildQualityPatch } from './ai/prompt-quality-check'
@@ -115,5 +115,28 @@ describe('one status: verdict, pill and headline agree', () => {
     for (const t of ['Keep going toward your goal', 'This moves you closer to the goal']) {
       expect(claimsGoalReached(t), t).toBe(false)
     }
+  })
+})
+
+describe('goal reached: the robot celebrates only a verified goal', () => {
+  const verified = { status: 'success' as const, note: 'it worked' }
+
+  it('is set when the Verifier passed and the analysis says the goal is reached', () => {
+    const out = prepareForDisplay(analysis({ verification: verified, builderNote: 'You reached your goal — the habit tracker is done!' }))
+    expect(out.goalReached).toBe(true)
+    expect(isGoalReached(out)).toBe(true)
+  })
+
+  it('is not set from the model\'s claim alone', () => {
+    expect(prepareForDisplay(analysis({ builderNote: 'Goal reached!' })).goalReached).toBeFalsy()
+  })
+
+  it('is not set when the Verifier passed but nobody says the goal is reached', () => {
+    expect(prepareForDisplay(analysis({ verification: verified })).goalReached).toBeFalsy()
+  })
+
+  it('is not set on a partial or failed verdict, or while blocked', () => {
+    expect(prepareForDisplay(analysis({ verification: { status: 'partial', note: 'x' }, builderNote: 'Goal reached!' })).goalReached).toBeFalsy()
+    expect(prepareForDisplay(analysis({ verification: verified, goalAlignment: 'blocked', builderNote: 'Goal reached!' })).goalReached).toBeFalsy()
   })
 })

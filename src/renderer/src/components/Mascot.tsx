@@ -1,361 +1,212 @@
 // Mascot.tsx
-// MyBuildy's character mascot. Renders one of five PNG poses with a soft,
-// state-colored glow layer, gentle idle motion (breathing + float + occasional
-// look-around), per-state effects (orbiting thinking dots, speaking bounce +
-// ripples, listening pings), and one-shot event reactions (hop + sparkles,
-// hop + red pulse + "!" badge, nod, amber alert).
+// MyBuildy's robot. Plays one of nine frame-by-frame animations (WebP strips
+// of 256x288 frames in assets/robot/) over a soft, state-coloured glow, with
+// the speaking ripples, listening pings, success sparkles, goal confetti and
+// the "!" alert badge on top.
 //
-// Visual only — it takes props and renders accordingly. No app logic lives here.
+// Visual only — it takes props and renders accordingly. Which animation plays,
+// and the frame timing, are pure functions in companion/robot-animation.ts.
 //
-// Performance rules:
-//   - Animate transform/opacity ONLY (glow is an opacity-composited gradient
-//     layer, not an animated filter).
-//   - prefers-reduced-motion: pose crossfades only — no breathing, look-around,
-//     hops, bounces or orbits.
+// Rendering: each strip is the background of one box, sized so one frame fills
+// it; the frame is chosen with background-position. The browser rescales the
+// artwork from the source pixels at any robot size or zoom, so it stays sharp.
+// Reduced motion: the first frame of each state only, no effects.
 
 import React, { useEffect, useState } from 'react'
-import { motion, AnimatePresence, useReducedMotion, useAnimationControls } from 'framer-motion'
 
-import idleImg from '../assets/mybuildy-idle.png'
-import watchingImg from '../assets/mybuildy-watching.png'
-import thinkingImg from '../assets/mybuildy-thinking.png'
-import speakingImg from '../assets/mybuildy-speaking.png'
+import idleStrip from '../assets/robot/idle.webp'
+import runningRightStrip from '../assets/robot/running-right.webp'
+import runningLeftStrip from '../assets/robot/running-left.webp'
+import wavingStrip from '../assets/robot/waving.webp'
+import jumpingStrip from '../assets/robot/jumping.webp'
+import failedStrip from '../assets/robot/failed.webp'
+import waitingStrip from '../assets/robot/waiting.webp'
+import workingStrip from '../assets/robot/working.webp'
+import reviewStrip from '../assets/robot/review.webp'
 
-export type MascotState = 'idle' | 'watching' | 'thinking' | 'speaking' | 'listening'
+import {
+  FRAME_HEIGHT, FRAME_WIDTH, ROBOT_ANIMATIONS, frameIndex,
+  type ReactionPlan, type RobotAnimation,
+} from '../companion/robot-animation'
 
-// Goal alignment drives the glow color while watching.
-export type MascotAlignment = 'on-track' | 'drift' | 'blocked'
-
-// One-shot event reactions. `id` must change on every new event so the same
-// reaction type can replay (e.g. two successes in a row).
-export type MascotReactionType = 'success' | 'blocked' | 'sent' | 'permission'
-export interface MascotReaction {
-  type: MascotReactionType
-  id: number
+const STRIPS: Record<RobotAnimation, string> = {
+  idle: idleStrip,
+  'running-right': runningRightStrip,
+  'running-left': runningLeftStrip,
+  waving: wavingStrip,
+  jumping: jumpingStrip,
+  failed: failedStrip,
+  waiting: waitingStrip,
+  working: workingStrip,
+  review: reviewStrip,
 }
+
+/** Voice cues drawn around the robot (they don't change its animation). */
+export type MascotVoice = 'speaking' | 'listening' | null
 
 interface Props {
-  state: MascotState
+  animation: RobotAnimation
+  /** When a one-off reaction started (ms, Date.now()); null for ongoing states. */
+  startedAt?: number | null
+  effect?: ReactionPlan['effect']
+  /** Height of the robot box in px (width follows the 256:288 artwork). */
   size?: number
-  /** Colors the watching glow: on-track green, drift amber, blocked red. */
-  alignment?: MascotAlignment | null
-  /** One-shot reaction; replayed whenever `id` changes. */
-  reaction?: MascotReaction | null
+  glow: string
+  voice?: MascotVoice
   /** Persistent "!" badge (blocked / hand-off) until guidance is opened. */
   showAlertBadge?: boolean
-  /** True while the window is being dragged — slight squash. */
-  dragging?: boolean
 }
 
-// Pose PNG per state. `listening` reuses the idle pose but with a different glow.
-const POSE: Record<MascotState, string> = {
-  idle: idleImg,
-  watching: watchingImg,
-  thinking: thinkingImg,
-  speaking: speakingImg,
-  listening: idleImg,
+/** The OS "reduce motion" setting, kept current if the user changes it while MyBuildy runs. */
+function useReducedMotion(): boolean {
+  const query = '(prefers-reduced-motion: reduce)'
+  const [reduced, setReduced] = useState(() => window.matchMedia(query).matches)
+  useEffect(() => {
+    const mql = window.matchMedia(query)
+    const onChange = (): void => setReduced(mql.matches)
+    onChange()
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
+  }, [])
+  return reduced
 }
 
-// Glow color per state (watching is overridden by alignment).
-const GLOW: Record<MascotState, string> = {
-  idle: '#F59E0B',      // warm orange
-  watching: '#10B981',  // green (ON TRACK default)
-  thinking: '#8B5CF6',  // purple
-  speaking: '#FFFFFF',  // white
-  listening: '#FB7185', // pink
+/** The current frame of `animation`, advanced on every animation frame. */
+function useFrame(animation: RobotAnimation, startedAt: number | null, reducedMotion: boolean): number {
+  const [frame, setFrame] = useState(0)
+  useEffect(() => {
+    if (reducedMotion) { setFrame(0); return }
+    const origin = startedAt ?? performance.timeOrigin + performance.now()
+    let raf = 0
+    const tick = (): void => {
+      const seconds = (performance.timeOrigin + performance.now() - origin) / 1000
+      setFrame(frameIndex(animation, seconds, false))
+      raf = requestAnimationFrame(tick)
+    }
+    tick()
+    return () => cancelAnimationFrame(raf)
+  }, [animation, startedAt, reducedMotion])
+  return frame
 }
 
-const ALIGNMENT_GLOW: Record<MascotAlignment, string> = {
-  'on-track': '#10B981', // green
-  drift: '#F59E0B',      // amber
-  blocked: '#EF4444',    // red
+/** Load every strip once, so switching animations never flashes an empty box. */
+function usePreloadedStrips(): void {
+  useEffect(() => {
+    for (const src of Object.values(STRIPS)) {
+      const img = new Image()
+      img.src = src
+    }
+  }, [])
 }
+
+const CONFETTI_COLOURS = ['#F59E0B', '#10B981', '#3B82F6', '#EC4899', '#FCD34D', '#8B5CF6']
 
 export function Mascot({
-  state,
-  size = 220,
-  alignment = null,
-  reaction = null,
+  animation,
+  startedAt = null,
+  effect = null,
+  size = 120,
+  glow,
+  voice = null,
   showAlertBadge = false,
-  dragging = false,
 }: Props): React.ReactElement {
-  const reducedMotion = useReducedMotion() ?? false
-  const [hovered, setHovered] = useState(false)
-
-  const poseSrc = POSE[state]
-  const glow = state === 'watching' && alignment ? ALIGNMENT_GLOW[alignment] : GLOW[state]
+  const reducedMotion = useReducedMotion()
+  usePreloadedStrips()
+  const frame = useFrame(animation, startedAt, reducedMotion)
+  const frames = ROBOT_ANIMATIONS[animation].frames
+  const width = Math.round((size * FRAME_WIDTH) / FRAME_HEIGHT)
   const dot = Math.max(5, Math.round(size * 0.05))
-
-  // ─── Idle look-around: every 8–14s a small tilt + shift, then back ────────
-  const [glance, setGlance] = useState({ rotate: 0, x: 0 })
-  useEffect(() => {
-    if (state !== 'idle' || reducedMotion) {
-      setGlance({ rotate: 0, x: 0 })
-      return
-    }
-    let lookTimer: ReturnType<typeof setTimeout>
-    let backTimer: ReturnType<typeof setTimeout>
-    const schedule = (): void => {
-      lookTimer = setTimeout(() => {
-        const dir = Math.random() < 0.5 ? -1 : 1
-        setGlance({
-          rotate: dir * (2 + Math.random() * 2),   // up to 4deg
-          x: dir * (2 + Math.random() * 3),        // a few px
-        })
-        backTimer = setTimeout(() => {
-          setGlance({ rotate: 0, x: 0 })
-          schedule()
-        }, 1100)
-      }, 8000 + Math.random() * 6000)               // 8–14s, randomized
-    }
-    schedule()
-    return () => { clearTimeout(lookTimer); clearTimeout(backTimer) }
-  }, [state, reducedMotion])
-
-  // ─── One-shot reactions (hop / nod), replayed on every new reaction id ────
-  const hopControls = useAnimationControls()
-  const [burst, setBurst] = useState<MascotReaction | null>(null)
-  useEffect(() => {
-    if (!reaction) return
-    // Overlay visuals (sparkles / pulse rings) live briefly, then unmount.
-    setBurst(reaction)
-    const clear = setTimeout(() => setBurst(null), 1600)
-    if (!reducedMotion) {
-      if (reaction.type === 'success' || reaction.type === 'blocked') {
-        // Hop: up, land, small second bounce.
-        hopControls.start({
-          y: [0, -Math.round(size * 0.09), 0, -Math.round(size * 0.03), 0],
-          transition: { duration: 0.65, ease: 'easeOut', times: [0, 0.32, 0.6, 0.8, 1] },
-        })
-      } else if (reaction.type === 'sent') {
-        // Quick nod: brief forward tilt and back.
-        hopControls.start({
-          rotate: [0, 9, -2, 0],
-          transition: { duration: 0.5, ease: 'easeInOut' },
-        })
-      }
-    }
-    return () => clearTimeout(clear)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reaction?.id])
-
-  // ─── Per-layer animation targets (all transform/opacity) ─────────────────
-  const anim = !reducedMotion
-
-  // Hover lift + drag squash (outermost so it composes with everything).
-  const liftY = anim && hovered && !dragging ? -Math.round(size * 0.03) : 0
-  const squash = anim && dragging
-    ? { scaleX: 1.05, scaleY: 0.93 }
-    : { scaleX: 1, scaleY: 1 }
-
-  // Speaking bounce / thinking head tilt.
-  const stateAnim =
-    anim && state === 'speaking' ? { y: [0, -Math.round(size * 0.035), 0], rotate: 0 }
-    : anim && state === 'thinking' ? { y: 0, rotate: -5 }
-    : { y: 0, rotate: 0 }
-  const stateTransition =
-    anim && state === 'speaking'
-      ? { duration: 0.5, ease: 'easeInOut' as const, repeat: Infinity }
-      : { type: 'spring' as const, stiffness: 220, damping: 18 }
-
-  // Thinking-dot orbit geometry.
-  const orbitD = Math.round(size * 0.3)
-  const orbitR = Math.round(orbitD / 2)
+  const effectKey = startedAt ?? 0
 
   return (
-    <div
-      style={{ ...styles.wrap, width: size, height: size }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      {/* Glow — opacity-composited radial gradient layer (no animated filters).
-          Crossfades between colors; brightens on hover. */}
-      <AnimatePresence initial={false}>
-        <motion.div
-          key={glow}
-          style={{
-            ...styles.glow,
-            background: `radial-gradient(circle, ${glow}66 0%, ${glow}2E 45%, transparent 70%)`,
-          }}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: hovered ? 0.95 : 0.65 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.4, ease: 'easeInOut' }}
-        />
-      </AnimatePresence>
+    <div style={{ ...styles.wrap, width, height: size }} data-testid="mascot" data-animation={animation}>
+      {/* Glow — a still radial gradient; its colour fades between states. */}
+      <div
+        style={{
+          ...styles.glow,
+          background: `radial-gradient(circle, ${glow}66 0%, ${glow}2E 45%, transparent 70%)`,
+        }}
+      />
 
-      {/* Hover lift + drag squash */}
-      <motion.div
-        style={styles.layer}
-        animate={{ y: liftY, ...squash }}
-        transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-      >
-        {/* Float — gentle up/down oscillation */}
-        <motion.div
-          style={styles.layer}
-          animate={anim ? { y: [0, -4, 0] } : { y: 0 }}
-          transition={anim ? { duration: 3, ease: 'easeInOut', repeat: Infinity } : undefined}
-        >
-          {/* Breathing — slow scale swell, idle only */}
-          <motion.div
-            style={styles.layer}
-            animate={anim && state === 'idle' ? { scale: [1, 1.015, 1] } : { scale: 1 }}
-            transition={
-              anim && state === 'idle'
-                ? { duration: 4.2, ease: 'easeInOut', repeat: Infinity }
-                : undefined
-            }
-          >
-            {/* Look-around — occasional small tilt + shift, idle only */}
-            <motion.div
-              style={styles.layer}
-              animate={{ rotate: glance.rotate, x: glance.x }}
-              transition={{ type: 'spring', stiffness: 120, damping: 14 }}
-            >
-              {/* Speaking bounce / thinking tilt */}
-              <motion.div style={styles.layer} animate={stateAnim} transition={stateTransition}>
-                {/* One-shot hop / nod reactions */}
-                <motion.div style={styles.layer} animate={hopControls}>
-                  {/* Speaking — expanding ripple rings (behind the mascot) */}
-                  {anim && state === 'speaking' &&
-                    [0, 1, 2].map((i) => (
-                      <span
-                        key={`ripple-${i}`}
-                        className="mascot-ripple"
-                        style={{ borderColor: glow, animationDelay: `${i * 0.5}s` }}
-                      />
-                    ))}
+      {/* Speaking ripples / listening pings, behind the robot */}
+      {!reducedMotion && voice &&
+        [0, 1, 2].map((i) => (
+          <span
+            key={`${voice}-${i}`}
+            className={voice === 'speaking' ? 'mascot-ripple' : 'mascot-ping'}
+            style={{ borderColor: glow, animationDelay: `${i * (voice === 'speaking' ? 0.5 : 0.4)}s` }}
+          />
+        ))}
 
-                  {/* Listening — expanding ping rings (behind the mascot) */}
-                  {anim && state === 'listening' &&
-                    [0, 1, 2].map((i) => (
-                      <span
-                        key={`ping-${i}`}
-                        className="mascot-ping"
-                        style={{ borderColor: glow, animationDelay: `${i * 0.4}s` }}
-                      />
-                    ))}
+      {/* The robot: one frame of the current strip */}
+      <div
+        role="img"
+        aria-label={`MyBuildy: ${animation.replace('-', ' ')}`}
+        style={{
+          ...styles.sprite,
+          backgroundImage: `url(${STRIPS[animation]})`,
+          backgroundSize: `${frames * 100}% 100%`,
+          backgroundPositionX: frames > 1 ? `${(frame / (frames - 1)) * 100}%` : '0%',
+        }}
+      />
 
-                  {/* Crossfade + small scale pop between poses — never a hard swap */}
-                  <AnimatePresence initial={false}>
-                    <motion.img
-                      key={poseSrc}
-                      src={poseSrc}
-                      alt="MyBuildy"
-                      draggable={false}
-                      style={styles.img}
-                      initial={{ opacity: 0, scale: reducedMotion ? 1 : 0.92 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.3, ease: 'easeInOut' }}
-                    />
-                  </AnimatePresence>
-
-                  {/* Thinking — three dots orbiting above the head */}
-                  {state === 'thinking' && (
-                    <div
-                      style={{
-                        ...styles.orbitBox,
-                        width: orbitD,
-                        height: orbitD,
-                        marginLeft: -orbitR,
-                      }}
-                    >
-                      <motion.div
-                        style={styles.layer}
-                        animate={anim ? { rotate: 360 } : { rotate: 0 }}
-                        transition={
-                          anim ? { duration: 2.6, ease: 'linear', repeat: Infinity } : undefined
-                        }
-                      >
-                        {[0, 1, 2].map((i) => (
-                          <span
-                            key={`dot-${i}`}
-                            style={{
-                              ...styles.orbitDot,
-                              width: dot,
-                              height: dot,
-                              marginTop: -dot / 2,
-                              marginLeft: -dot / 2,
-                              background: glow,
-                              transform: `rotate(${i * 120}deg) translateX(${orbitR - dot / 2}px)`,
-                            }}
-                          />
-                        ))}
-                      </motion.div>
-                    </div>
-                  )}
-                </motion.div>
-              </motion.div>
-            </motion.div>
-          </motion.div>
-        </motion.div>
-      </motion.div>
-
-      {/* Success — short sparkle burst radiating outward */}
-      {!reducedMotion && burst?.type === 'success' && (
-        <div key={`sparkle-${burst.id}`} style={styles.overlayCenter}>
+      {/* Verifier passed — a short sparkle burst */}
+      {!reducedMotion && effect === 'sparkles' && (
+        <div key={`sparkles-${effectKey}`} style={styles.overlayCenter}>
           {[0, 1, 2, 3, 4, 5].map((i) => {
             const angle = (i / 6) * Math.PI * 2
-            const r = size * 0.42
+            const r = size * 0.45
             return (
-              <motion.span
+              <span
                 key={i}
-                style={{ ...styles.sparkle, width: dot, height: dot }}
-                initial={{ x: 0, y: 0, opacity: 1, scale: 0.4 }}
-                animate={{
-                  x: Math.cos(angle) * r,
-                  y: Math.sin(angle) * r,
-                  opacity: 0,
-                  scale: 1,
+                className="mascot-sparkle"
+                style={{
+                  ...styles.sparkle,
+                  width: dot,
+                  height: dot,
+                  ['--dx' as string]: `${Math.round(Math.cos(angle) * r)}px`,
+                  ['--dy' as string]: `${Math.round(Math.sin(angle) * r)}px`,
                 }}
-                transition={{ duration: 0.7, ease: 'easeOut' }}
               />
             )
           })}
         </div>
       )}
 
-      {/* Blocked / hand-off — red pulse ring; permission prompt — amber alert ring */}
-      {!reducedMotion && (burst?.type === 'blocked' || burst?.type === 'permission') && (
-        <div key={`ring-${burst.id}`} style={styles.overlayCenter}>
-          {[0, 1].map((i) => (
-            <motion.span
+      {/* Goal complete — confetti falling around the robot */}
+      {!reducedMotion && effect === 'confetti' && (
+        <div key={`confetti-${effectKey}`} style={styles.confettiBox}>
+          {Array.from({ length: 18 }, (_, i) => (
+            <span
               key={i}
+              className="mascot-confetti"
               style={{
-                ...styles.pulseRing,
-                width: size * 0.8,
-                height: size * 0.8,
-                borderColor: burst.type === 'blocked' ? '#EF4444' : '#F59E0B',
+                left: `${(i * 37) % 100}%`,
+                width: Math.max(4, Math.round(size * 0.045)),
+                height: Math.max(6, Math.round(size * 0.07)),
+                background: CONFETTI_COLOURS[i % CONFETTI_COLOURS.length],
+                animationDelay: `${(i % 6) * 0.25}s`,
+                ['--spin' as string]: `${(i % 2 ? 1 : -1) * (180 + i * 20)}deg`,
               }}
-              initial={{ scale: 0.65, opacity: 0.85 }}
-              animate={{ scale: 1.45, opacity: 0 }}
-              transition={{ duration: 0.75, ease: 'easeOut', delay: i * 0.3 }}
             />
           ))}
         </div>
       )}
 
       {/* "!" badge — persists until the guidance panel is opened */}
-      <AnimatePresence>
-        {showAlertBadge && (
-          <motion.div
-            data-testid="mascot-alert-badge"
-            style={{
-              ...styles.badge,
-              width: Math.round(size * 0.17),
-              height: Math.round(size * 0.17),
-              fontSize: Math.round(size * 0.11),
-            }}
-            initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.3 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: reducedMotion ? 1 : 0.3 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-          >
-            !
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {showAlertBadge && (
+        <div
+          data-testid="mascot-alert-badge"
+          style={{
+            ...styles.badge,
+            width: Math.round(size * 0.17),
+            height: Math.round(size * 0.17),
+            fontSize: Math.round(size * 0.11),
+          }}
+        >
+          !
+        </div>
+      )}
 
       <style>{`
         .mascot-ripple,
@@ -363,18 +214,22 @@ export function Mascot({
           position: absolute;
           top: 50%;
           left: 50%;
-          width: 76%;
+          width: 86%;
           height: 76%;
           border-radius: 50%;
           border: 2px solid;
           box-sizing: border-box;
           pointer-events: none;
         }
-        .mascot-ripple {
-          animation: mascotRipple 1.6s ease-out infinite;
-        }
-        .mascot-ping {
-          animation: mascotPing 1.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+        .mascot-ripple { animation: mascotRipple 1.6s ease-out infinite; }
+        .mascot-ping { animation: mascotPing 1.4s cubic-bezier(0, 0, 0.2, 1) infinite; }
+        .mascot-sparkle { animation: mascotSparkle 0.8s ease-out forwards; }
+        .mascot-confetti {
+          position: absolute;
+          top: -10%;
+          border-radius: 2px;
+          opacity: 0;
+          animation: mascotConfetti 1.6s ease-in 2 forwards;
         }
         @keyframes mascotRipple {
           0% { transform: translate(-50%, -50%) scale(0.55); opacity: 0.55; }
@@ -383,6 +238,14 @@ export function Mascot({
         @keyframes mascotPing {
           0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0.7; }
           80%, 100% { transform: translate(-50%, -50%) scale(1.7); opacity: 0; }
+        }
+        @keyframes mascotSparkle {
+          0% { transform: translate(0, 0) scale(0.4); opacity: 1; }
+          100% { transform: translate(var(--dx), var(--dy)) scale(1); opacity: 0; }
+        }
+        @keyframes mascotConfetti {
+          0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+          100% { transform: translateY(130%) rotate(var(--spin)); opacity: 0; }
         }
       `}</style>
     </div>
@@ -396,41 +259,22 @@ const styles = {
     flexShrink: 0,
     userSelect: 'none' as const,
   },
-  // Generic full-size animation layer — each layer animates ONE thing.
-  layer: {
-    position: 'relative' as const,
-    width: '100%',
-    height: '100%',
-  },
   glow: {
     position: 'absolute' as const,
     inset: '-8%',
     borderRadius: '50%',
     pointerEvents: 'none' as const,
+    opacity: 0.75,
+    transition: 'background 0.4s ease-in-out',
   },
-  img: {
+  sprite: {
     position: 'absolute' as const,
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
-    objectFit: 'contain' as const,
+    inset: 0,
+    backgroundRepeat: 'no-repeat',
+    backgroundPositionY: '0%',
     pointerEvents: 'none' as const,
-    // Static depth shadow only (never animated) — colored glow is the gradient layer.
+    // Static depth shadow only (never animated) — colour glow is the gradient layer.
     filter: 'drop-shadow(0 4px 14px rgba(0,0,0,0.4))',
-  },
-  orbitBox: {
-    position: 'absolute' as const,
-    top: '-4%',
-    left: '50%',
-    pointerEvents: 'none' as const,
-  },
-  orbitDot: {
-    position: 'absolute' as const,
-    top: '50%',
-    left: '50%',
-    borderRadius: '50%',
-    display: 'block',
   },
   overlayCenter: {
     position: 'absolute' as const,
@@ -449,20 +293,16 @@ const styles = {
     boxShadow: '0 0 6px #FCD34D',
     display: 'block',
   },
-  pulseRing: {
+  confettiBox: {
     position: 'absolute' as const,
-    top: '50%',
-    left: '50%',
-    translate: '-50% -50%',
-    borderRadius: '50%',
-    border: '2.5px solid',
-    boxSizing: 'border-box' as const,
-    display: 'block',
+    inset: '-6% -10%',
+    overflow: 'hidden' as const,
+    pointerEvents: 'none' as const,
   },
   badge: {
     position: 'absolute' as const,
-    top: '4%',
-    right: '8%',
+    top: '2%',
+    right: '4%',
     borderRadius: '50%',
     background: '#EF4444',
     color: '#fff',

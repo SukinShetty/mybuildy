@@ -1,14 +1,15 @@
 // mascot-signals.test.ts
 // Pure mapping from an incoming AnalysisResult (plus the previously seen one)
-// to mascot props: alignment glow, one-shot reactions, and the "!" alert badge.
+// to robot signals: alignment glow, one-off reactions, and the "!" alert badge.
 //
 // Event semantics under test:
 //   - Reactions fire on TRANSITIONS, not on every analysis, so a persistent
-//     blocked/permission state doesn't hop the mascot every cycle.
+//     blocked state doesn't replay "failed" every cycle.
 //   - The main process re-sends the SAME analysis (same analyzedAt) when a
 //     background pass patches it (e.g. the verifier verdict arrives) — a
-//     re-send must not replay an already-fired success.
-//   - Priority when several events land in one analysis: blocked > success > permission.
+//     re-send must not replay a verdict that already fired.
+//   - Priority when several events land in one analysis: failed > goal complete > Verifier passed.
+//   - Hand-offs raise the badge but are not a reaction (the robot waits instead).
 
 import { describe, it, expect } from 'vitest'
 import { deriveMascotSignals } from './mascot-signals'
@@ -33,6 +34,9 @@ function makeAnalysis(overrides: Partial<AnalysisResult> = {}): AnalysisResult {
   }
 }
 
+const passed = { status: 'success' as const, note: 'it worked' }
+const failedVerdict = { status: 'failed' as const, note: 'nope' }
+
 describe('deriveMascotSignals — alignment glow', () => {
   it('passes goalAlignment through', () => {
     expect(deriveMascotSignals(makeAnalysis({ goalAlignment: 'on-track' }), null).alignment).toBe('on-track')
@@ -52,69 +56,62 @@ describe('deriveMascotSignals — no event', () => {
     expect(s.reaction).toBeNull()
     expect(s.raiseAlertBadge).toBe(false)
   })
+
+  it('a partial verdict is not a reaction', () => {
+    expect(deriveMascotSignals(makeAnalysis({ verification: { status: 'partial', note: 'kind of' } }), null).reaction).toBeNull()
+  })
+
+  it('a permission prompt is not a reaction (the robot waves instead)', () => {
+    expect(deriveMascotSignals(makeAnalysis({ terminalState: 'permission_prompt' }), null).reaction).toBeNull()
+  })
 })
 
-describe('deriveMascotSignals — verifier success', () => {
-  it('fires success when a success verdict arrives', () => {
-    const current = makeAnalysis({ verification: { status: 'success', note: 'it worked' } })
-    expect(deriveMascotSignals(current, null).reaction).toBe('success')
+describe('deriveMascotSignals — Verifier passed → jump with sparkles', () => {
+  it('fires when a success verdict arrives', () => {
+    expect(deriveMascotSignals(makeAnalysis({ verification: passed }), null).reaction).toBe('verify-passed')
   })
 
-  it('does not fire success for failed/partial verdicts', () => {
-    expect(
-      deriveMascotSignals(makeAnalysis({ verification: { status: 'failed', note: 'nope' } }), null).reaction
-    ).toBeNull()
-    expect(
-      deriveMascotSignals(makeAnalysis({ verification: { status: 'partial', note: 'kind of' } }), null).reaction
-    ).toBeNull()
-  })
-
-  it('fires success when the verdict is patched onto the SAME analysis (re-send)', () => {
+  it('fires when the verdict is patched onto the SAME analysis (re-send)', () => {
     const prev = makeAnalysis({ analyzedAt: '2026-01-01T00:01:00.000Z' })
-    const current = makeAnalysis({
-      analyzedAt: '2026-01-01T00:01:00.000Z',
-      verification: { status: 'success', note: 'it worked' },
-    })
-    expect(deriveMascotSignals(current, prev).reaction).toBe('success')
+    const current = makeAnalysis({ analyzedAt: '2026-01-01T00:01:00.000Z', verification: passed })
+    expect(deriveMascotSignals(current, prev).reaction).toBe('verify-passed')
   })
 
-  it('does not replay success on a second re-send of the same analysis', () => {
-    const prev = makeAnalysis({
-      analyzedAt: '2026-01-01T00:01:00.000Z',
-      verification: { status: 'success', note: 'it worked' },
-    })
-    const current = makeAnalysis({
-      analyzedAt: '2026-01-01T00:01:00.000Z',
-      verification: { status: 'success', note: 'it worked' },
-      nextPrompt: 'patched prompt', // some other patch triggered the re-send
-    })
+  it('does not replay on a second re-send of the same analysis', () => {
+    const prev = makeAnalysis({ analyzedAt: '2026-01-01T00:01:00.000Z', verification: passed })
+    const current = makeAnalysis({ analyzedAt: '2026-01-01T00:01:00.000Z', verification: passed, nextPrompt: 'patched' })
     expect(deriveMascotSignals(current, prev).reaction).toBeNull()
   })
 
   it('fires again for a NEW analysis with its own success verdict', () => {
-    const prev = makeAnalysis({
-      analyzedAt: '2026-01-01T00:01:00.000Z',
-      verification: { status: 'success', note: 'first win' },
-    })
-    const current = makeAnalysis({
-      analyzedAt: '2026-01-01T00:02:00.000Z',
-      verification: { status: 'success', note: 'second win' },
-    })
-    expect(deriveMascotSignals(current, prev).reaction).toBe('success')
+    const prev = makeAnalysis({ analyzedAt: '2026-01-01T00:01:00.000Z', verification: passed })
+    const current = makeAnalysis({ analyzedAt: '2026-01-01T00:02:00.000Z', verification: passed })
+    expect(deriveMascotSignals(current, prev).reaction).toBe('verify-passed')
   })
 })
 
-describe('deriveMascotSignals — blocked / hand-off', () => {
-  it('fires blocked + badge when alignment turns blocked', () => {
+describe('deriveMascotSignals — goal complete → three jumps with confetti', () => {
+  it('fires when the goal is first reached', () => {
+    expect(deriveMascotSignals(makeAnalysis({ goalReached: true, verification: passed }), null).reaction).toBe('goal-complete')
+  })
+
+  it('does not replay on a re-send of the same analysis', () => {
+    const prev = makeAnalysis({ goalReached: true, verification: passed })
+    expect(deriveMascotSignals(makeAnalysis({ goalReached: true, verification: passed }), prev).reaction).toBeNull()
+  })
+})
+
+describe('deriveMascotSignals — failed: blocked, or the Verifier fails', () => {
+  it('fires failed + badge when alignment turns blocked', () => {
     const s = deriveMascotSignals(makeAnalysis({ goalAlignment: 'blocked' }), makeAnalysis({ goalAlignment: 'on-track' }))
-    expect(s.reaction).toBe('blocked')
+    expect(s.reaction).toBe('failed')
     expect(s.raiseAlertBadge).toBe(true)
   })
 
-  it('fires blocked + badge on a hand-off (needsHumanJudgment)', () => {
-    const s = deriveMascotSignals(makeAnalysis({ needsHumanJudgment: true }), makeAnalysis())
-    expect(s.reaction).toBe('blocked')
-    expect(s.raiseAlertBadge).toBe(true)
+  it('fires failed when a failed verdict arrives, and not again on a re-send', () => {
+    expect(deriveMascotSignals(makeAnalysis({ verification: failedVerdict }), null).reaction).toBe('failed')
+    const prev = makeAnalysis({ verification: failedVerdict })
+    expect(deriveMascotSignals(makeAnalysis({ verification: failedVerdict }), prev).reaction).toBeNull()
   })
 
   it('does not re-fire while the analysis stays blocked', () => {
@@ -125,55 +122,34 @@ describe('deriveMascotSignals — blocked / hand-off', () => {
     expect(s.reaction).toBeNull()
     expect(s.raiseAlertBadge).toBe(false)
   })
+})
 
-  it('a hand-off following a blocked alignment is still the same alert (no re-fire)', () => {
-    const s = deriveMascotSignals(
-      makeAnalysis({ needsHumanJudgment: true }),
-      makeAnalysis({ goalAlignment: 'blocked' })
-    )
+describe('deriveMascotSignals — hand-off', () => {
+  it('raises the badge but plays no reaction (the robot shows "waiting")', () => {
+    const s = deriveMascotSignals(makeAnalysis({ needsHumanJudgment: true }), makeAnalysis())
     expect(s.reaction).toBeNull()
+    expect(s.raiseAlertBadge).toBe(true)
+  })
+
+  it('a hand-off following a blocked alignment is still the same alert (no new badge)', () => {
+    const s = deriveMascotSignals(makeAnalysis({ needsHumanJudgment: true }), makeAnalysis({ goalAlignment: 'blocked' }))
+    expect(s.raiseAlertBadge).toBe(false)
+  })
+
+  it('a resolved hand-off raises nothing', () => {
+    const s = deriveMascotSignals(makeAnalysis({ needsHumanJudgment: true }), makeAnalysis(), () => true)
     expect(s.raiseAlertBadge).toBe(false)
   })
 })
 
-describe('deriveMascotSignals — permission prompt', () => {
-  it('fires permission when the agent starts asking for approval', () => {
-    const s = deriveMascotSignals(
-      makeAnalysis({ terminalState: 'permission_prompt' }),
-      makeAnalysis({ terminalState: 'working' })
-    )
-    expect(s.reaction).toBe('permission')
-  })
-
-  it('fires permission on the first analysis of a session', () => {
-    expect(deriveMascotSignals(makeAnalysis({ terminalState: 'permission_prompt' }), null).reaction).toBe('permission')
-  })
-
-  it('does not re-fire while the permission prompt persists', () => {
-    const s = deriveMascotSignals(
-      makeAnalysis({ terminalState: 'permission_prompt', analyzedAt: '2026-01-01T00:02:00.000Z' }),
-      makeAnalysis({ terminalState: 'permission_prompt', analyzedAt: '2026-01-01T00:01:00.000Z' })
-    )
-    expect(s.reaction).toBeNull()
-  })
-})
-
 describe('deriveMascotSignals — priority when events coincide', () => {
-  it('blocked wins over success', () => {
-    const current = makeAnalysis({
-      goalAlignment: 'blocked',
-      verification: { status: 'success', note: 'previous prompt worked' },
-    })
-    const s = deriveMascotSignals(current, makeAnalysis())
-    expect(s.reaction).toBe('blocked')
-    expect(s.raiseAlertBadge).toBe(true) // badge still raised even though the hop shows blocked
+  it('failed wins over a Verifier pass', () => {
+    const s = deriveMascotSignals(makeAnalysis({ goalAlignment: 'blocked', verification: passed }), makeAnalysis())
+    expect(s.reaction).toBe('failed')
+    expect(s.raiseAlertBadge).toBe(true)
   })
 
-  it('success wins over permission', () => {
-    const current = makeAnalysis({
-      terminalState: 'permission_prompt',
-      verification: { status: 'success', note: 'previous prompt worked' },
-    })
-    expect(deriveMascotSignals(current, makeAnalysis()).reaction).toBe('success')
+  it('goal complete wins over a plain Verifier pass', () => {
+    expect(deriveMascotSignals(makeAnalysis({ goalReached: true, verification: passed }), makeAnalysis()).reaction).toBe('goal-complete')
   })
 })

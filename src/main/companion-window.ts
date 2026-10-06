@@ -150,20 +150,36 @@ export function createCompanionWindow(): BrowserWindow {
   // Keep the guidance window anchored to the mascot as it's dragged around,
   // and hide guidance whenever the mascot itself is hidden.
   //
-  // Drag signal for the mascot squash: -webkit-app-region drags deliver NO
-  // mouse events to the renderer, so main is the only reliable source. 'move'
-  // fires repeatedly during a drag; 350ms of silence means the drag ended.
+  // Drag signal for the robot's running animation: -webkit-app-region drags
+  // deliver NO mouse events to the renderer, so main is the only reliable
+  // source. 'move' fires repeatedly during a drag; 350ms of silence means the
+  // drag ended. The direction (left/right) is re-sent whenever it flips.
+  // A move that comes with a size change is a resize (robot size, pulled back
+  // on screen), not the user dragging — the robot doesn't run for it.
   let dragEndTimer: ReturnType<typeof setTimeout> | null = null
+  let last = window.getBounds()
+  let dragDirection: 'left' | 'right' | null = null
   window.on('move', () => {
     repositionGuidanceWindow()
     if (window.isDestroyed()) return
-    if (dragEndTimer === null) window.webContents.send(IPC.COMPANION_DRAG, true)
-    else clearTimeout(dragEndTimer)
+    const now = window.getBounds()
+    // > 2px: on scaled displays a plain move can round the size by a pixel.
+    const resized = Math.abs(now.width - last.width) > 2 || Math.abs(now.height - last.height) > 2
+    const direction = now.x < last.x ? 'left' : now.x > last.x ? 'right' : dragDirection
+    last = now
+    if (resized) return
+    if (dragEndTimer === null || direction !== dragDirection) {
+      dragDirection = direction
+      window.webContents.send(IPC.COMPANION_DRAG, true, direction)
+    }
+    if (dragEndTimer !== null) clearTimeout(dragEndTimer)
     dragEndTimer = setTimeout(() => {
       dragEndTimer = null
+      dragDirection = null
       if (window.isDestroyed()) return
-      window.webContents.send(IPC.COMPANION_DRAG, false)
+      window.webContents.send(IPC.COMPANION_DRAG, false, null)
       pullBackOnScreen(window)
+      last = window.getBounds()
     }, 350)
   })
   window.on('closed', () => {

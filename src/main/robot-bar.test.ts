@@ -29,7 +29,8 @@ vi.mock('./guidance-window', () => ({
 }))
 
 import {
-  ROBOT_SIZES, robotWindowSize, clampRobotScale, zoomedRobotScale, robotSizeText, robotSizeName,
+  robotWindowSize, clampRobotScale, zoomedRobotScale, robotSizeText, robotScaleToPercent, robotPercentToScale,
+  ROBOT_DEFAULT_SCALE, ROBOT_MIN_SCALE, ROBOT_MAX_SCALE, ROBOT_SLIDER_STEP,
 } from '../renderer/src/robot-size'
 import { loadRobotScale, saveRobotScale } from './robot-prefs'
 import { ROBOT_SHORTCUT, robotShortcutLabel, registerRobotShortcut, pressRobotShortcut } from './robot-shortcut'
@@ -47,30 +48,42 @@ function analysis(over: Partial<AnalysisResult> = {}): AnalysisResult {
   }
 }
 
-describe('robot size setting', () => {
-  it('Medium is today\'s size (300 tall, wide enough for the whole bar); Large is 1.5×; Small is smaller', () => {
-    expect(robotWindowSize(ROBOT_SIZES.medium)).toEqual({ width: 340, height: 300 })
-    expect(robotWindowSize(ROBOT_SIZES.large)).toEqual({ width: 510, height: 450 })
-    expect(robotWindowSize(ROBOT_SIZES.small).height).toBeLessThan(300)
+describe('robot size slider', () => {
+  it("runs from 60% to 200% in 5% steps, with 100% (today's size) as Reset", () => {
+    expect(robotScaleToPercent(ROBOT_MIN_SCALE)).toBe(60)
+    expect(robotScaleToPercent(ROBOT_MAX_SCALE)).toBe(200)
+    expect(Math.round(ROBOT_SLIDER_STEP * 100)).toBe(5)
+    expect(robotScaleToPercent(ROBOT_DEFAULT_SCALE)).toBe(100)
   })
-  it('Ctrl/Cmd + scroll steps 10% at a time, within limits', () => {
+  it('slider value <-> scale round-trips and is clamped to the range', () => {
+    for (let p = 60; p <= 200; p += 5) expect(robotScaleToPercent(robotPercentToScale(p))).toBe(p)
+    expect(robotPercentToScale(20)).toBe(0.6)
+    expect(robotPercentToScale(500)).toBe(2)
+    expect(robotScaleToPercent(1.234)).toBe(123)
+  })
+  it('the window grows with the scale: 100% is 340x300 (whole bar fits); 200% doubles it; 60% shrinks it', () => {
+    expect(robotWindowSize(1)).toEqual({ width: 340, height: 300 })
+    expect(robotWindowSize(2)).toEqual({ width: 680, height: 600 })
+    expect(robotWindowSize(0.6)).toEqual({ width: 204, height: 180 })
+    expect(robotWindowSize(9)).toEqual({ width: 680, height: 600 })
+  })
+  it('Ctrl/Cmd + scroll steps 10% at a time, within the same limits', () => {
     expect(zoomedRobotScale(1, 'in')).toBe(1.1)
     expect(zoomedRobotScale(1, 'out')).toBe(0.9)
-    expect(zoomedRobotScale(1.6, 'in')).toBe(1.6)
-    expect(zoomedRobotScale(0.8, 'out')).toBe(0.8)
+    expect(zoomedRobotScale(2, 'in')).toBe(2)
+    expect(zoomedRobotScale(0.6, 'out')).toBe(0.6)
     expect(clampRobotScale('huge')).toBe(1)
   })
-  it('names the size while zooming', () => {
-    expect(robotSizeText(1.5)).toBe('Robot size: Large')
+  it('shows the size as a percentage while zooming or sliding', () => {
+    expect(robotSizeText(1.5)).toBe('Robot size: 150%')
     expect(robotSizeText(1.2)).toBe('Robot size: 120%')
-    expect(robotSizeName(0.85)).toBe('small')
   })
-  it('is remembered across launches; a missing or broken file means Medium', () => {
+  it('is remembered across launches; a missing or broken file means 100%', () => {
     expect(loadRobotScale(dir)).toBe(1)
     saveRobotScale(dir, 1.5)
     expect(loadRobotScale(dir)).toBe(1.5)
     writeFileSync(join(dir, 'robot-prefs.json'), '{"scale": 99}')
-    expect(loadRobotScale(dir)).toBe(1.6)
+    expect(loadRobotScale(dir)).toBe(2)
     writeFileSync(join(dir, 'robot-prefs.json'), 'nope')
     expect(loadRobotScale(dir)).toBe(1)
   })

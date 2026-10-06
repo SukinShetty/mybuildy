@@ -1,46 +1,58 @@
-// RobotSizeSetting.tsx — Settings → "Robot size": Small, Medium (today's
-// size) or Large (1.5×). Scales the robot, its bar, icons and text together;
-// remembered across launches (main: robot-prefs.ts). Ctrl/Cmd + scroll over
-// the robot also zooms it — the choice here follows that.
+// RobotSizeSetting.tsx — Settings → "Robot size": a slider from 60% to 200%
+// and a Reset button (back to 100%). Scales the robot, its bar, icons and
+// "Next:" text together; remembered across launches (main: robot-prefs.ts).
+// Ctrl/Cmd + scroll over the robot also zooms it — the slider follows that.
 
 import React, { useEffect, useState } from 'react'
-import { ROBOT_SIZES, ROBOT_SIZE_LABELS, robotSizeName, type RobotSizeName } from '../robot-size'
+import {
+  ROBOT_DEFAULT_SCALE, ROBOT_MAX_SCALE, ROBOT_MIN_SCALE, ROBOT_SLIDER_STEP,
+  robotPercentToScale, robotScaleToPercent,
+} from '../robot-size'
 
 export function RobotSizeSetting(): React.ReactElement {
-  const [scale, setScale] = useState<number | null>(null)
+  const [percent, setPercent] = useState<number | null>(null)
 
   useEffect(() => {
-    void window.mybuildy.robot.getScale().then(setScale)
-    return window.mybuildy.robot.onScaleChanged(setScale)
+    void window.mybuildy.robot.getScale().then((s) => setPercent(robotScaleToPercent(s)))
+    return window.mybuildy.robot.onScaleChanged((s) => setPercent(robotScaleToPercent(s)))
   }, [])
 
-  const current = scale === null ? null : robotSizeName(scale)
+  function apply(nextPercent: number): void {
+    setPercent(nextPercent)
+    void window.mybuildy.robot.setScale(robotPercentToScale(nextPercent))
+  }
+
+  const value = percent ?? robotScaleToPercent(ROBOT_DEFAULT_SCALE)
+  const isDefault = value === robotScaleToPercent(ROBOT_DEFAULT_SCALE)
 
   return (
-    <div role="radiogroup" aria-label="Robot size" style={S.row}>
-      {(Object.keys(ROBOT_SIZES) as RobotSizeName[]).map((name) => {
-        const on = current === name
-        return (
-          <button
-            key={name}
-            type="button"
-            role="radio"
-            aria-checked={on}
-            className={on ? 'btn-primary' : 'btn-secondary'}
-            style={S.option}
-            onClick={() => { void window.mybuildy.robot.setScale(ROBOT_SIZES[name]).then(setScale) }}
-          >
-            {ROBOT_SIZE_LABELS[name]}
-          </button>
-        )
-      })}
-      {scale !== null && !current && <span style={S.custom}>Custom ({Math.round(scale * 100)}%)</span>}
+    <div style={S.row}>
+      <input
+        type="range"
+        aria-label="Robot size"
+        min={robotScaleToPercent(ROBOT_MIN_SCALE)}
+        max={robotScaleToPercent(ROBOT_MAX_SCALE)}
+        step={Math.round(ROBOT_SLIDER_STEP * 100)}
+        value={value}
+        disabled={percent === null}
+        onChange={(e) => apply(Number(e.target.value))}
+        style={S.slider}
+      />
+      <span style={S.value} aria-live="polite">{value}%</span>
+      <button
+        type="button"
+        className="btn-secondary"
+        disabled={percent === null || isDefault}
+        onClick={() => apply(robotScaleToPercent(ROBOT_DEFAULT_SCALE))}
+      >
+        Reset
+      </button>
     </div>
   )
 }
 
 const S = {
-  row: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' as const },
-  option: { minWidth: 76, justifyContent: 'center' },
-  custom: { fontSize: 12, color: 'var(--color-text-dim)' },
+  row: { display: 'flex', gap: 10, alignItems: 'center' },
+  slider: { flex: 1, minWidth: 140, accentColor: 'var(--color-accent)' },
+  value: { minWidth: 44, textAlign: 'right' as const, fontSize: 13, fontVariantNumeric: 'tabular-nums' as const, color: 'var(--color-text)' },
 }

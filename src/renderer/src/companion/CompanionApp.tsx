@@ -6,8 +6,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { StopGeneration, transcribeAndAsk } from './voice-question'
 import { useCompanionStore } from '../store/useCompanionStore'
 import { Mascot } from '../components/Mascot'
-import type { MascotState, MascotAlignment, MascotReaction, MascotReactionType } from '../components/Mascot'
-import { deriveMascotSignals } from './mascot-signals'
+import { deriveMascotSignals, type MascotAlignment } from './mascot-signals'
+import { currentAnimation, reactionSeconds, robotGlow, type RobotReaction, type RobotSituation } from './robot-animation'
 import { nextStepLabel } from './next-step'
 import { ResolvedHandoffs } from '../handoff'
 import { robotSizeText } from '../robot-size'
@@ -48,25 +48,30 @@ export function CompanionApp(): React.ReactElement {
   const stopGenRef = useRef(new StopGeneration())
   const streamRef = useRef<MediaStream | null>(null)
 
-  // ─── Mascot animation signals (Phase 6) ─────────────────────────────
-  // Alignment glow, one-shot reactions, "!" badge and drag squash. Derived
-  // from existing IPC events via deriveMascotSignals (pure, unit-tested).
+  // ─── Robot animation signals ────────────────────────────────────────
+  // Alignment glow, one-off reactions, "!" badge and the drag direction.
+  // Derived from existing IPC events via deriveMascotSignals and
+  // robot-animation.ts (both pure, unit-tested).
   const [alignment, setAlignment] = useState<MascotAlignment | null>(null)
-  const [reaction, setReaction] = useState<MascotReaction | null>(null)
+  const [reaction, setReaction] = useState<{ type: RobotReaction; startedAt: number } | null>(null)
   const [showAlertBadge, setShowAlertBadge] = useState(false)
   const [dragging, setDragging] = useState(false)
+  const [dragDirection, setDragDirection] = useState<'left' | 'right' | null>(null)
   // Previously seen analysis — reactions fire on transitions, not repeats.
   const prevAnalysisRef = useRef<AnalysisResult | null>(null)
-  const reactionIdRef = useRef(0)
   // Hand-offs the user answered or dismissed in the guidance window: their "!"
   // badge clears at once and never comes back for them (handoff.ts).
   const resolvedHandoffsRef = useRef(new ResolvedHandoffs())
 
-  // Each event gets a fresh id so the same reaction type replays.
-  const fireReaction = useCallback((type: MascotReactionType) => {
-    reactionIdRef.current += 1
-    setReaction({ type, id: reactionIdRef.current })
+  // A one-off reaction plays from now; afterwards the ongoing state returns.
+  const fireReaction = useCallback((type: RobotReaction) => {
+    setReaction({ type, startedAt: Date.now() })
   }, [])
+  useEffect(() => {
+    if (!reaction) return
+    const timer = setTimeout(() => setReaction(null), reactionSeconds(reaction.type) * 1000 + 50)
+    return () => clearTimeout(timer)
+  }, [reaction])
 
   // New watching session (or none): forget analysis-derived mascot signals.
   const resetMascotSignals = useCallback(() => {
@@ -140,11 +145,13 @@ export function CompanionApp(): React.ReactElement {
         if (status === 'sent') {
           setSentFlash(true)
           setTimeout(() => setSentFlash(false), 2000)
-          fireReaction('sent') // quick mascot nod
         }
       }),
-      // Window drag (from main's 'move' events) — mascot squash while dragging.
-      window.mybuildy.onCompanionDrag((_: unknown, d: boolean) => setDragging(d)),
+      // Window drag (from main's 'move' events) — the robot runs that way.
+      window.mybuildy.onCompanionDrag((_: unknown, d: boolean, direction: 'left' | 'right' | null) => {
+        setDragging(d)
+        setDragDirection(direction)
+      }),
     ]
     return () => { unsubs.forEach((u) => u()) }
   }, [])
@@ -384,13 +391,26 @@ export function CompanionApp(): React.ReactElement {
     : micError ? micError
     : null
 
-  // Map the existing companion/mic state to a mascot pose (presentational only).
-  const mascotState: MascotState =
-    micState === 'listening' ? 'listening'
-    : avatarState === 'speaking' ? 'speaking'
-    : avatarState === 'thinking' || micState === 'transcribing' || micState === 'answering' ? 'thinking'
-    : watchedWindowName ? 'watching'
-    : 'idle'
+  // What is going on, for the robot's animation (robot-animation.ts maps it).
+  const analysing = avatarState === 'thinking' || micState === 'transcribing' || micState === 'answering'
+  const robotSituation: RobotSituation = {
+    dragging,
+    dragDirection,
+    analysing,
+    handoffOpen: !!latestAnalysis?.needsHumanJudgment && !resolvedHandoffsRef.current.isResolved(latestAnalysis),
+    agentWorking: !!watchedWindowName && latestAnalysis?.terminalState === 'working',
+    promptReady: !!watchedWindowName && !sentFlash && !!latestAnalysis?.nextPrompt?.trim(),
+    needsUser: needsSetup || !!watchedSourceMessage || latestAnalysis?.terminalState === 'permission_prompt',
+    paused: isPaused,
+  }
+  const robot = currentAnimation(robotSituation, reaction, Date.now())
+  const glow = robotGlow({
+    listening: micState === 'listening',
+    speaking: avatarState === 'speaking',
+    thinking: analysing,
+    watching: !!watchedWindowName,
+    alignment,
+  })
 
   return (
     <div style={S.root}>
@@ -404,12 +424,13 @@ export function CompanionApp(): React.ReactElement {
         title="Click to interact — right-click to show MyBuildy your coding agent"
       >
         <Mascot
-          state={mascotState}
+          animation={robot.animation}
+          startedAt={robot.startedAt}
+          effect={robot.effect}
           size={120}
-          alignment={alignment}
-          reaction={reaction}
+          glow={glow}
+          voice={micState === 'listening' ? 'listening' : avatarState === 'speaking' ? 'speaking' : null}
           showAlertBadge={showAlertBadge}
-          dragging={dragging}
         />
       </div>
 

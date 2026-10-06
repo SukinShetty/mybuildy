@@ -375,9 +375,9 @@ const mybuildyAPI = {
 
   // Companion mascot: true while the window is being dragged (main watches the
   // window's 'move' events — app-region drags emit no renderer mouse events).
-  onCompanionDrag: (handler: (event: unknown, dragging: boolean) => void): (() => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, dragging: boolean) =>
-      handler(_event, dragging)
+  onCompanionDrag: (handler: (event: unknown, dragging: boolean, direction: 'left' | 'right' | null) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, dragging: boolean, direction: 'left' | 'right' | null) =>
+      handler(_event, dragging, direction === 'left' || direction === 'right' ? direction : null)
     ipcRenderer.on(IPC.COMPANION_DRAG, listener)
     return () => ipcRenderer.removeListener(IPC.COMPANION_DRAG, listener)
   },

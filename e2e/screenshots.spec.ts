@@ -25,10 +25,16 @@ test.afterAll(async () => {
 })
 
 test('mascot (companion window)', async () => {
-  // Wait for the mascot image to finish loading so the PNG isn't blank.
-  await mybuildy.companion.waitForFunction(() => {
-    const images = Array.from(document.querySelectorAll('img'))
-    return images.length > 0 && images.every((img) => img.complete && img.naturalWidth > 0)
+  // Wait for the robot's animation strip (a CSS background) to finish loading
+  // so the PNG isn't blank.
+  await mybuildy.companion.waitForFunction(async () => {
+    const sprite = document.querySelector('[data-testid="mascot"] [role="img"]')
+    const url = sprite ? /url\("?([^")]+)"?\)/.exec(getComputedStyle(sprite).backgroundImage)?.[1] : null
+    if (!url) return false
+    const img = new Image()
+    img.src = url
+    try { await img.decode() } catch { return false }
+    return img.naturalWidth > 0
   })
   await mybuildy.companion.waitForTimeout(500)
   await mybuildy.companion.screenshot({

@@ -707,7 +707,7 @@ export function SettingsScreen(): React.ReactElement {
           </div>
         </div>
 
-        {/* Robot size: Small / Medium / Large (Ctrl or Cmd + scroll over the robot too) */}
+        {/* Robot size: a 60%–200% slider and Reset (Ctrl or Cmd + scroll over the robot too) */}
         <div style={styles.section}>
           <div style={styles.sectionLabel}>Robot size</div>
           <div style={styles.sectionHint}>

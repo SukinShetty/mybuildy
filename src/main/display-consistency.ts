@@ -88,9 +88,20 @@ export function reconcileWithVerdict(analysis: AnalysisResult): AnalysisResult {
   return out
 }
 
+/**
+ * The goal counts as complete only when the Verifier passed AND the analysis
+ * says so — a model's claim alone never sets it, and nothing set while blocked.
+ */
+export function isGoalReached(analysis: AnalysisResult): boolean {
+  if (analysis.verification?.status !== 'success' || analysis.goalAlignment === 'blocked') return false
+  return TEXT_FIELDS.some((field) => claimsGoalReached(analysis[field]))
+}
+
 /** Everything the panel shows goes through here (first display and every patch). */
 export function prepareForDisplay(analysis: AnalysisResult): AnalysisResult {
   let out = reconcileWithVerdict(analysis)
+  const goalReached = isGoalReached(out)
+  if (!!out.goalReached !== goalReached) out = { ...out, goalReached }
   if (out.needsHumanJudgment) {
     const text = userFacingHandoff(out.humanJudgmentReason)
     if (text !== out.humanJudgmentReason) out = { ...out, humanJudgmentReason: text }

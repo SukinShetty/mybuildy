@@ -1,39 +1,50 @@
 // mascot-signals.ts
 // Pure mapping from an incoming AnalysisResult (plus the previously seen one)
-// to mascot props: alignment glow, one-shot event reactions, and whether to
-// raise the "!" alert badge. Kept free of React/assets so it unit-tests cleanly.
+// to robot signals: alignment glow, a one-off reaction, and whether to raise
+// the "!" alert badge. Kept free of React/assets so it unit-tests cleanly.
+// The ongoing animation (idle, review, waving, …) is chosen separately, from
+// the current situation, by robot-animation.ts.
 //
 // Event semantics:
-//   - Reactions fire on TRANSITIONS into a state, not on every analysis, so a
-//     blocked/permission state that persists across cycles doesn't hop the
-//     mascot every 30 seconds.
+//   - Reactions fire on TRANSITIONS, not on every analysis, so a blocked state
+//     that persists across cycles doesn't replay "failed" every 30 seconds.
 //   - The main process re-sends the SAME analysis (same analyzedAt) when a
 //     background pass patches it (verifier verdict, grader-improved prompt —
-//     see patchDisplayAndResend in analysis-loop.ts). Success fires when the
-//     verdict first appears, and never again for that analysis.
-//   - When several events coincide in one analysis, the most urgent wins:
-//     blocked > success > permission. The badge is raised regardless of which
-//     reaction animates.
+//     see patchDisplayAndResend in analysis-loop.ts). A verdict fires when it
+//     first appears, and never again for that analysis.
+//   - When several events coincide, one reaction plays:
+//     failed > goal complete > Verifier passed.
+//   - Hand-offs raise the badge but are not a reaction: the robot shows the
+//     ongoing "waiting" state while the decision card is open.
 //   - A hand-off the user already answered or dismissed (isResolved) no longer
-//     counts: it raises no badge and no reaction, however often it is re-sent.
+//     counts: it raises no badge, however often it is re-sent.
 
-import type { AnalysisResult } from '../types'
-// Type-only import — erased at build time, so this module never pulls the
-// mascot's PNG/framer-motion imports into a test run.
-import type { MascotAlignment, MascotReactionType } from '../components/Mascot'
+import type { AnalysisResult, VerificationStatus } from '../types'
+import type { RobotReaction } from './robot-animation'
+
+/** Goal alignment drives the glow colour while watching. */
+export type MascotAlignment = 'on-track' | 'drift' | 'blocked'
 
 export interface MascotSignals {
-  /** Glow color while watching: on-track green, drift amber, blocked red. */
+  /** Glow colour while watching: on-track green, drift amber, blocked red. */
   alignment: MascotAlignment | null
-  /** One-shot reaction to play (the caller assigns a fresh id), or null. */
-  reaction: MascotReactionType | null
+  /** One-off reaction to play (the caller times it), or null. */
+  reaction: RobotReaction | null
   /** True when a NEW blocked/hand-off alert should raise the "!" badge. */
   raiseAlertBadge: boolean
 }
 
-/** BLOCKED alignment and unresolved hand-off moments share one alert treatment. */
-function isBlocked(a: AnalysisResult, isResolved: (a: AnalysisResult) => boolean): boolean {
+/** BLOCKED alignment and unresolved hand-off moments share one alert badge. */
+function isAlert(a: AnalysisResult, isResolved: (a: AnalysisResult) => boolean): boolean {
   return a.goalAlignment === 'blocked' || (!!a.needsHumanJudgment && !isResolved(a))
+}
+
+/** A verdict counts once: on a new analysis, or when first patched onto the shown one. */
+function newVerdict(current: AnalysisResult, previous: AnalysisResult | null, status: VerificationStatus): boolean {
+  if (current.verification?.status !== status) return false
+  const alreadySeen = previous !== null && previous.analyzedAt === current.analyzedAt &&
+    previous.verification?.status === status
+  return !alreadySeen
 }
 
 export function deriveMascotSignals(
@@ -41,34 +52,20 @@ export function deriveMascotSignals(
   previous: AnalysisResult | null,
   isResolved: (a: AnalysisResult) => boolean = () => false
 ): MascotSignals {
-  // Transition into blocked / hand-off.
-  const newBlocked =
-    isBlocked(current, isResolved) && (previous === null || !isBlocked(previous, isResolved))
+  const newAlert = isAlert(current, isResolved) && (previous === null || !isAlert(previous, isResolved))
+  const newBlocked = current.goalAlignment === 'blocked' && previous?.goalAlignment !== 'blocked'
+  const newGoalReached = !!current.goalReached &&
+    !(previous !== null && previous.analyzedAt === current.analyzedAt && previous.goalReached)
 
-  // Verifier success: fires when a success verdict is first seen — either on a
-  // fresh analysis, or when the verdict is patched onto the one already shown.
-  const prevAlreadySucceeded =
-    previous !== null &&
-    previous.analyzedAt === current.analyzedAt &&
-    previous.verification?.status === 'success'
-  const newSuccess = current.verification?.status === 'success' && !prevAlreadySucceeded
-
-  // Transition into a permission prompt (agent asking y/n).
-  const newPermission =
-    current.terminalState === 'permission_prompt' &&
-    previous?.terminalState !== 'permission_prompt'
-
-  const reaction: MascotReactionType | null = newBlocked
-    ? 'blocked'
-    : newSuccess
-      ? 'success'
-      : newPermission
-        ? 'permission'
-        : null
+  const reaction: RobotReaction | null =
+    newBlocked || newVerdict(current, previous, 'failed') ? 'failed'
+    : newGoalReached ? 'goal-complete'
+    : newVerdict(current, previous, 'success') ? 'verify-passed'
+    : null
 
   return {
     alignment: current.goalAlignment ?? null,
     reaction,
-    raiseAlertBadge: newBlocked,
+    raiseAlertBadge: newAlert,
   }
 }

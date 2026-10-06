@@ -458,6 +458,9 @@ export interface AnalysisResult {
   // Verifier (Block 4): verdict on the PREVIOUS suggested prompt, attached by the
   // main-process loop (never produced by the model, never persisted).
   verification?: VerificationVerdict | null
+  // Set by MAIN (display-consistency.ts) only when the Verifier passed AND the
+  // analysis says the user's goal is reached — the robot's goal-complete moment.
+  goalReached?: boolean
   // Model-classified coding-agent state (see TerminalState). Parser defaults to
   // 'unknown' when the model omits it.
   terminalState?: TerminalState
@@ -625,7 +628,7 @@ export const IPC = {
   SEND_PROMPT:         'mybuildy:send-prompt',        // guidance window → main (send displayed prompt by id into watched window)
   SEND_ELIGIBILITY:    'mybuildy:send-eligibility',   // main → guidance window (canSend + sendBlockedReason)
   SEND_STATUS:         'mybuildy:send-status',        // main → companion (transient "Sent" mascot label)
-  COMPANION_DRAG:      'mybuildy:companion-drag',     // main → companion (window drag started/ended — mascot squash)
+  COMPANION_DRAG:      'mybuildy:companion-drag',     // main → companion (window drag started/ended + direction — running animation)
   LOAD_PROJECT:        'mybuildy:load-project',
   SAVE_PROJECT:        'mybuildy:save-project',
   LOAD_SETTINGS:       'mybuildy:load-settings',     // → RedactedSettings (never raw keys)
