@@ -15,7 +15,7 @@ import { robotHiddenMessage, hideButtonTitle } from '../robot-hidden'
 import { useRefreshWhileOpen } from '../components/useRefreshWhileOpen'
 import { BAR_BACKGROUND_CSS, ICON_COLOR, ICON_HOVER_COLOR, ICON_HOVER_BACKGROUND_CSS } from './robot-theme'
 import type { AnalysisResult, WatchStatus, VoiceFallback } from '../types'
-import { isModelConfigured, CAPTURE_NOTICE_MESSAGE, VOICE_FALLBACK_HEADLINE } from '../types'
+import { isModelConfigured, CAPTURE_NOTICE_MESSAGE } from '../types'
 import type { CompanionState, MicState } from '../store/useCompanionStore'
 
 interface WindowItem { id: string; name: string; thumbnailBase64: string }
@@ -511,7 +511,7 @@ export function CompanionApp(): React.ReactElement {
       {/* The computer's voice is speaking because ElevenLabs failed: say so, and why */}
       {voiceFallback && voiceNoticeDismissed !== voiceFallback.code && (
         <div style={S.voiceNotice} role="alert" data-testid="voice-fallback">
-          <div style={S.voiceNoticeTitle}>{VOICE_FALLBACK_HEADLINE}</div>
+          <div style={S.voiceNoticeTitle}>{voiceFallback.headline}</div>
           <div style={S.voiceNoticeReason}>{voiceFallback.reason}</div>
           <div style={S.voiceNoticeButtons}>
             <button style={S.voiceNoticeButton} onClick={() => window.mybuildy.openSettings()}>Open Settings</button>

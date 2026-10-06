@@ -167,14 +167,14 @@ export function registerIpcHandlers(
   // ─── Voice: never a silent fallback to the computer's voice ─────────────────
   // While a set ElevenLabs key fails, the robot and Settings say so, with why.
   setVoiceFallbackNotice((state) => {
-    const fallback = state ? { code: state.code, reason: state.reason } : null
+    const fallback = state ? { code: state.code, headline: state.headline, reason: state.reason } : null
     for (const win of [getCompanionWindow(), getMainWindow()]) {
       if (win && !win.isDestroyed()) win.webContents.send(IPC.VOICE_FALLBACK, fallback)
     }
   })
   ipcMain.handle(IPC.VOICE_FALLBACK_GET, async () => {
     const state = getVoiceFallback()
-    return state ? { code: state.code, reason: state.reason } : null
+    return state ? { code: state.code, headline: state.headline, reason: state.reason } : null
   })
 
   // The robot's "Open Settings": the panel, on Settings.

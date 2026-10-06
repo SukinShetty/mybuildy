@@ -28,7 +28,7 @@ describe('the computer-voice notice: shown on a failure, once, and cleared when 
   it('raises, does not repeat, changes with the reason, and clears', () => {
     const health = new VoiceHealth()
     expect(health.ok()).toBeUndefined() // nothing to clear
-    expect(health.failed('quota')).toEqual({ code: 'quota', reason: VOICE_FAILURE_REASONS.quota })
+    expect(health.failed('quota')).toEqual({ code: 'quota', headline: "Your voice key isn't working, so MyBuildy is using your computer's voice", reason: VOICE_FAILURE_REASONS.quota })
     expect(health.failed('quota')).toBeUndefined() // same reason: not raised again per sentence
     expect(health.failed('network')?.code).toBe('network')
     expect(health.current()?.code).toBe('network')

@@ -20,15 +20,18 @@
     "test": "vitest run",
     "test:live": "vitest run --config vitest.live.config.ts",
     "test:e2e": "npm run build && playwright test",
-    "test:e2e:packaged": "node scripts/e2e-packaged.mjs"
+    "test:e2e:packaged": "node scripts/e2e-packaged.mjs",
+    "fetch:voice": "node scripts/fetch-kokoro-model.mjs"
   },
   "dependencies": {
     "nemp-mcp-server": "^0.2.2",
+    "onnxruntime-node": "1.21.0",
     "zod": "^3.25.76",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@electron/asar": "^3.4.1",
+    "@huggingface/transformers": "3.8.1",
     "@playwright/test": "^1.63.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
@@ -36,6 +39,7 @@
     "electron": "^44.4.4",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
+    "kokoro-js": "1.2.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "^5.5.0",
@@ -56,6 +60,10 @@
       {
         "from": "build/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": "resources/kokoro",
+        "to": "kokoro"
       }
     ],
     "afterPack": "scripts/after-pack.js",
@@ -89,12 +97,23 @@
       "extendInfo": {
         "NSMicrophoneUsageDescription": "MyBuildy uses the microphone only when you click the mic to ask a question.",
         "NSAppleEventsUsageDescription": "MyBuildy asks System Events to bring your terminal to the front and press Cmd+V when you click Paste into terminal. It never presses Return."
-      }
+      },
+      "signIgnore": [
+        "Contents/Resources/kokoro/"
+      ]
     },
     "dmg": {
       "artifactName": "MyBuildy-${version}-${arch}.${ext}",
       "sign": true
     },
-    "publish": null
+    "publish": null,
+    "asarUnpack": [
+      "node_modules/onnxruntime-node/**"
+    ]
+  },
+  "overrides": {
+    "@electron/osx-sign": {
+      "isbinaryfile": "5.0.7"
+    }
   }
 }
