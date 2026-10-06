@@ -79,12 +79,3 @@ describe('watch log lines', () => {
     expect(debug).toContain('to="Secret project"')
   })
 })
-
-describe('Guidance screen capture miss', () => {
-  it('an open (minimized/hidden) window is reported as minimized, not missing', async () => {
-    const { missingWindowReason } = await import('./capture-guard')
-    expect(missingWindowReason({ exists: true, minimized: true, ownerPid: 1 })).toBe('window-minimized')
-    expect(missingWindowReason({ exists: false, minimized: false, ownerPid: null })).toBe('window-missing')
-    expect(missingWindowReason(null)).toBe('window-missing') // unknown: unchanged behaviour
-  })
-})

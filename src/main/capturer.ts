@@ -10,9 +10,8 @@
 // captured in high fidelity); only the SELECTED window is captured full-res.
 
 import { desktopCapturer } from 'electron'
-import type { WindowSource, CaptureResult, CaptureOutcome } from '../renderer/src/types'
-import { captureHaltReason, findWatchedSource, missingWindowReason } from './capture-guard'
-import { probeWindowPresence } from './window-presence'
+import type { WindowSource, CaptureResult } from '../renderer/src/types'
+import { findWatchedSource } from './capture-guard'
 import { isBlankFrame } from './mac-permissions-core'
 
 // Picker thumbnails: small + lower quality to minimise exposure of other windows.
@@ -130,27 +129,4 @@ export async function probeWatchedWindowFrame(sourceId: string): Promise<'ok' | 
   const { width, height } = target.thumbnail.getSize()
   if (target.thumbnail.isEmpty()) return 'blank'
   return isBlankFrame(target.thumbnail.toBitmap(), width, height) ? 'blank' : 'ok'
-}
-
-/**
- * Manual capture for the GuidanceWorkspace panel. Returns a discriminated outcome
- * — NO full-screen fallback. If the selected window is missing the caller must
- * prompt the user to reselect rather than capturing the desktop.
- */
-export async function captureWindowForAnalysis(
-  sourceId: string | null,
-  expectedName: string | null
-): Promise<CaptureOutcome> {
-  if (!sourceId) {
-    console.log('[Capture] no window selected — analysis halted, reselection required')
-    return { ok: false, reason: captureHaltReason(null, false)! }
-  }
-  const capture = await captureWatchedWindow(sourceId, expectedName)
-  if (captureHaltReason(sourceId, !!capture)) {
-    // Not in the capture list: closed, or (Windows) minimized/hidden but open.
-    const reason = missingWindowReason(await probeWindowPresence(sourceId))
-    console.log(`[Capture] watched window ${sourceId} not capturable (${reason}) — analysis halted`)
-    return { ok: false, reason }
-  }
-  return { ok: true, capture: capture! }
 }

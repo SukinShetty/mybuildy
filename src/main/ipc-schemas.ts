@@ -114,14 +114,6 @@ export const setSecretSchema = z.object({
   value: z.string().max(2000),
 })
 
-export const captureResultSchema = z.object({
-  imageBase64: z.string().max(40_000_000),
-  windowTitle: z.string().max(2000),
-  sourceId: z.string().max(2000),
-  wasClaudeCodeAutoDetected: z.boolean().optional(),
-  capturedAt: z.string().max(64).optional(),
-}).passthrough()
-
 export const projectMemorySchema = z.object({}).passthrough() // shape validated elsewhere; just ensure it's an object
 
 export const goalPartialSchema = z.object({

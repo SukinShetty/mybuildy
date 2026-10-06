@@ -2,7 +2,7 @@
 // State for the floating companion window.
 
 import { create } from 'zustand'
-import type { AnalysisResult } from '../types'
+import type { AnalysisResult, WatchStatus } from '../types'
 
 export type CompanionState = 'idle' | 'thinking' | 'speaking'
 export type MicState = 'idle' | 'listening' | 'transcribing' | 'answering'
@@ -16,9 +16,12 @@ interface CompanionStoreState {
   lastSpokenText: string
   showPromptCard: boolean
 
-  // Watched source
+  // The one watch, as main sends it (the Guidance tab shows the same)
   watchedWindowName: string | null
   watchedSourceMessage: string | null
+  analyzing: boolean
+  // The prompt the user pasted (its promptId): that step is done, never "ready" again
+  pastedPromptId: string | null
 
   // Window picker
   showWindowPicker: boolean
@@ -32,11 +35,11 @@ interface CompanionStoreState {
   setAvatarState: (state: CompanionState) => void
   setLatestAnalysis: (analysis: AnalysisResult) => void
   setMuted: (muted: boolean) => void
-  setPaused: (paused: boolean) => void
+  setWatchStatus: (status: WatchStatus) => void
+  setPastedPromptId: (promptId: string | null) => void
   setQuietMode: (quiet: boolean) => void
   setLastSpokenText: (text: string) => void
   setShowPromptCard: (show: boolean) => void
-  setWatchedSource: (windowName: string | null, message: string | null) => void
   setShowWindowPicker: (show: boolean) => void
   setMicState: (state: MicState) => void
   setMicError: (error: string | null) => void
@@ -54,6 +57,8 @@ export const useCompanionStore = create<CompanionStoreState>((set) => ({
   showPromptCard: false,
   watchedWindowName: null,
   watchedSourceMessage: null,
+  analyzing: false,
+  pastedPromptId: null,
   showWindowPicker: false,
   micState: 'idle',
   micError: null,
@@ -62,15 +67,19 @@ export const useCompanionStore = create<CompanionStoreState>((set) => ({
   setAvatarState: (avatarState) => set({ avatarState }),
   setLatestAnalysis: (latestAnalysis) => set({ latestAnalysis, showPromptCard: true }),
   setMuted: (isMuted) => set({ isMuted }),
-  setPaused: (isPaused) => set({ isPaused }),
+  setWatchStatus: (s) => set({
+    watchedWindowName: s.windowName,
+    watchedSourceMessage: s.message,
+    isPaused: !!s.windowName && !s.auto,
+    analyzing: s.analyzing,
+  }),
+  setPastedPromptId: (pastedPromptId) => set({ pastedPromptId }),
   setQuietMode: (isQuietMode) => set({ isQuietMode }),
   setLastSpokenText: (lastSpokenText) => set({ lastSpokenText }),
   setShowPromptCard: (showPromptCard) => set({ showPromptCard }),
-  setWatchedSource: (watchedWindowName, watchedSourceMessage) =>
-    set({ watchedWindowName, watchedSourceMessage }),
   setShowWindowPicker: (showWindowPicker) => set({ showWindowPicker }),
   setMicState: (micState) => set({ micState }),
   setMicError: (micError) => set({ micError }),
   setLastAnswer: (lastAnswer) => set({ lastAnswer, showPromptCard: !!lastAnswer }),
-  clearAnalysis: () => set({ latestAnalysis: null, showPromptCard: false, lastSpokenText: '', lastAnswer: null }),
+  clearAnalysis: () => set({ latestAnalysis: null, showPromptCard: false, lastSpokenText: '', lastAnswer: null, pastedPromptId: null }),
 }))

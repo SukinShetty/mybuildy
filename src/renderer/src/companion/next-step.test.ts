@@ -4,7 +4,7 @@ import { nextStepLabel, type NextStepInput } from './next-step'
 
 const base: NextStepInput = {
   needsSetup: false, pastedJustNow: false, watchedSourceMessage: null, watchedWindowName: 'Terminal',
-  isPaused: false, thinking: false, analysis: null,
+  isPaused: false, thinking: false, promptAlreadyPasted: false, analysis: null,
 }
 const analysis = (over: Partial<AnalysisResult>): AnalysisResult => ({
   screenContentVisible: true, whatIsHappening: '', whatItMeans: '', whatIsBuilt: [], whatIsMissing: [], whatIsBroken: [],
@@ -36,5 +36,23 @@ describe('the line under the robot always says what to do next', () => {
     expect(nextStepLabel({ ...base, isPaused: true })).toBe('Paused — click Resume to keep watching')
     expect(nextStepLabel({ ...base, watchedSourceMessage: 'Project switched — show MyBuildy your coding agent.' }))
       .toBe('Project switched — show MyBuildy your coding agent.')
+  })
+  it('while an analysis runs (started on the robot or in the Guidance tab), even with Auto off', () => {
+    expect(nextStepLabel({ ...base, thinking: true })).toBe('Thinking about what just happened…')
+    expect(nextStepLabel({ ...base, thinking: true, isPaused: true })).toBe('Thinking about what just happened…')
+    expect(nextStepLabel({ ...base, thinking: true, watchedSourceMessage: 'The watched window is hidden.' }))
+      .toBe('Thinking about what just happened…')
+  })
+  it('never a step already done: a pasted prompt is not offered again', () => {
+    const ready = analysis({ nextPrompt: 'Add a login page', terminalState: 'awaiting_prompt' })
+    expect(nextStepLabel({ ...base, analysis: ready, promptAlreadyPasted: true })).toBe('Waiting for Claude Code to finish')
+    expect(nextStepLabel({ ...base, analysis: ready, promptAlreadyPasted: true, isPaused: true }))
+      .toBe('Paused — click Resume to keep watching')
+  })
+  it('Auto off after Analyze Now: the result still says what to do', () => {
+    const ready = analysis({ nextPrompt: 'Add a login page', terminalState: 'awaiting_prompt' })
+    expect(nextStepLabel({ ...base, isPaused: true, analysis: ready })).toBe('Your prompt is ready — click Paste into terminal')
+    expect(nextStepLabel({ ...base, isPaused: true, analysis: analysis({ needsHumanJudgment: true }) }))
+      .toBe('Next: answer the question in the panel')
   })
 })

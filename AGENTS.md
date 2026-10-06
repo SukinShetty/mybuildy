@@ -51,10 +51,10 @@ All channel names are defined in `src/renderer/src/types.ts` (`IPC` constant). G
 
 | Group | Channels | Purpose |
 |---|---|---|
-| Capture | `mybuildy:list-windows`, `mybuildy:capture-window`, `mybuildy:select-watch-source`, `mybuildy:companion-watched-source` | List windows with thumbnails, screenshot the watched window, choose what's watched |
-| Analysis | `mybuildy:analyze`, `mybuildy:brainstorm-start/-chunk/-done/-error`, `mybuildy:companion-analysis` | Screen analysis (non-streaming) and streaming brainstorm chat |
+| Watch | `mybuildy:list-windows`, `mybuildy:select-watch-source`, `mybuildy:watch-status`, `mybuildy:watch-status-get`, `mybuildy:analyze-now` | List windows, choose what's watched, and the ONE watch status (window, Auto, analysing, message) that main sends to both the robot and the Guidance tab; Analyze Now runs the watch's own analysis cycle — there is no second capture/analysis path |
+| Analysis | `mybuildy:companion-analysis`, `mybuildy:analysis-result`, `mybuildy:brainstorm-start/-chunk/-done/-error` | Each analysis result, to the robot and the Guidance tab; streaming brainstorm chat |
 | Providers | `mybuildy:get-provider-infos`, `mybuildy:test-connection` | Provider metadata for the Settings UI; connectivity check |
-| Companion control | `mybuildy:companion-start/-stop/-pause/-resume/-quiet`, `mybuildy:open-panel`, `mybuildy:show-companion`, `mybuildy:reset-companion`, `mybuildy:companion-shutdown`, `mybuildy:companion-state` | Watch lifecycle, quiet mode, window management |
+| Companion control | `mybuildy:companion-start/-stop/-pause/-resume/-quiet` (pause/resume = Auto off/on in the Guidance tab; stop ends the watch everywhere), `mybuildy:open-panel`, `mybuildy:show-companion`, `mybuildy:reset-companion`, `mybuildy:companion-shutdown`, `mybuildy:companion-state` | Watch lifecycle, quiet mode, window management |
 | Voice | `mybuildy:companion-speak`, `mybuildy:companion-audio`, `mybuildy:push-to-talk`, `mybuildy:ask-question`, `mybuildy:transcribe-audio`, `mybuildy:companion-answer` | TTS playback, push-to-talk input, Whisper STT, spoken answers |
 | State | `mybuildy:load-project`, `mybuildy:save-project`, `mybuildy:load-settings`, `mybuildy:save-settings`, `mybuildy:set-secret` (one-way), `memory:export-mybuildymd`, `mybuildy:copy-text` | Persistence and secrets. `LOAD_SETTINGS` returns redacted settings — raw keys never cross IPC to the renderer |
 

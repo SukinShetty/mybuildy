@@ -7,7 +7,6 @@
 // first launch opens the Goal screen so the user states their purpose.
 
 import React, { useEffect, useState } from 'react'
-import { guidanceController } from './guidance/guidance-instance'
 import { isModelConfigured } from './types'
 import { useAppStore } from './store/useAppStore'
 import { NavBar } from './components/NavBar'
@@ -78,11 +77,21 @@ function MainPanel(): React.ReactElement {
   // Project switched (from any screen): the brainstorm conversation, its
   // extracted data and the cached analysis belonged to the old project.
   useEffect(() => window.mybuildy.onProjectSwitched(() => {
-    guidanceController.cancelAll()
     useAppStore.getState().resetForProjectSwitch()
   }), [])
-  // Stop (the mascot's Stop button): cancel Guidance-screen analysis and its timer too.
-  useEffect(() => window.mybuildy.onStopped(() => guidanceController.cancelAll()), [])
+
+  // The one watch: the Guidance tab shows exactly what main (and so the robot)
+  // has — the watched window, Auto, a running analysis and its result.
+  useEffect(() => {
+    const store = useAppStore.getState
+    const offStatus = window.mybuildy.onWatchStatus((status) => store().applyWatchStatus(status))
+    const offAnalysis = window.mybuildy.onAnalysisResult((analysis) => store().setLatestAnalysis(analysis))
+    void window.mybuildy.getWatchStatus().then(({ status, analysis }) => {
+      store().applyWatchStatus(status)
+      if (status.windowName && analysis) store().setLatestAnalysis(analysis)
+    })
+    return () => { offStatus(); offAnalysis() }
+  }, [])
 
   useEffect(() => {
     let cancelled = false

@@ -58,6 +58,19 @@ export const FAKE_MODELS: ModelChoice[] = [
   { id: 'fake-mini', label: 'Fake Mini', suggested: true, curated: true },
 ]
 
+/**
+ * The fake provider's screen analysis: the canned answer, after
+ * MYBUILDY_E2E_FAKE_ANALYSIS_MS (default 0) so a test can see the app while an
+ * analysis is running. Counts calls, so a test can check one analysis ran.
+ */
+export let fakeAnalysisCalls = 0
+export async function fakeAnalyzeScreen(): Promise<AnalysisResult> {
+  fakeAnalysisCalls++
+  const delay = Number(process.env['MYBUILDY_E2E_FAKE_ANALYSIS_MS'] ?? 0)
+  if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay))
+  return fakeAnalysis()
+}
+
 /** A canned analysis for a watch started during the e2e wizard run. */
 export function fakeAnalysis(): AnalysisResult {
   return {

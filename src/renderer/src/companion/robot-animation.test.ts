@@ -64,7 +64,14 @@ describe('ongoingAnimation: MyBuildy events → robot state', () => {
     expect(ongoingAnimation(at({ dragging: true, dragDirection: 'right', handoffOpen: true }))).toBe('running-right')
     expect(ongoingAnimation(at({ dragging: true, dragDirection: null }))).toBe('running-right')
   })
-  it('paused → idle', () => expect(ongoingAnimation(at({ paused: true, promptReady: true }))).toBe('idle'))
+  it('paused → idle, not following the agent', () => {
+    expect(ongoingAnimation(at({ paused: true }))).toBe('idle')
+    expect(ongoingAnimation(at({ paused: true, agentWorking: true, needsUser: true }))).toBe('idle')
+  })
+  it('paused with a prompt ready (Analyze Now with Auto off) → waving', () =>
+    expect(ongoingAnimation(at({ paused: true, promptReady: true }))).toBe('waving'))
+  it('an analysis runs even while paused (Analyze Now) → working', () =>
+    expect(ongoingAnimation(at({ paused: true, analysing: true }))).toBe('working'))
 })
 
 describe('reactions', () => {

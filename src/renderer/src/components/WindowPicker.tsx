@@ -79,6 +79,7 @@ function WindowItem({
   return (
     <button
       data-window-id={win.id}
+      data-window-name={win.name}
       onClick={onSelect}
       style={{
         ...styles.windowItem,

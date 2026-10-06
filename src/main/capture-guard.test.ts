@@ -1,24 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
-  captureHaltReason, isStaleSession, findWatchedSource,
+  isStaleSession, findWatchedSource,
   startContinuity, pollContinuity, normalizeTitle,
   MISSING_RESUME_ANY_TITLE_MS, MISSING_LOST_MS,
 } from './capture-guard'
-
-describe('captureHaltReason — no silent full-screen fallback', () => {
-  it('halts with no-source when nothing is selected', () => {
-    expect(captureHaltReason(null, false)).toBe('no-source')
-    expect(captureHaltReason(null, true)).toBe('no-source')
-  })
-
-  it('halts with window-missing when the selected window is gone', () => {
-    expect(captureHaltReason('window:42', false)).toBe('window-missing')
-  })
-
-  it('proceeds (null) only when a selected window is found', () => {
-    expect(captureHaltReason('window:42', true)).toBeNull()
-  })
-})
 
 describe('findWatchedSource — resolve by source id (titles change every agent turn)', () => {
   const CIVITAS = { id: 'window:42:0', name: 'CIVITAS' }

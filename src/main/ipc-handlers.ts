@@ -22,11 +22,11 @@ import { mkdirSync } from 'fs'
 import type { BrowserWindow } from 'electron'
 import { isModelConfigured } from '../renderer/src/types'
 import { IPC, CHOOSE_MODEL_MESSAGE, CAPTURE_NOTICE_REQUIRED_MESSAGE, MAC_PERMISSION_MESSAGES, MAC_BLANK_CAPTURE_MESSAGE } from '../renderer/src/types'
-import type { AppSettings, NonSecretSettings, GuidancePayload, WatchStartResult } from '../renderer/src/types'
+import type { AppSettings, NonSecretSettings, GuidancePayload, WatchStartResult, AnalyzeNowResult } from '../renderer/src/types'
 import { showGuidanceWindow, hideGuidanceWindow, resizeGuidanceWindow, showLastGuidance, getGuidanceWebContentsId, setGuidanceFocusable, clearGuidanceCache } from './guidance-window'
 import { handleVoiceEnded, handleVoiceError, stopVoice, setVoiceMuted, resetVoiceDedup } from './voice-player'
 import * as nemp from './nemp-bridge'
-import { listOpenWindows, captureWindowForAnalysis, probeWatchedWindowFrame } from './capturer'
+import { listOpenWindows, probeWatchedWindowFrame } from './capturer'
 import {
   loadProjectMemory, saveProjectMemory, loadGoal, setGoal, updateGoal,
   loadSettings, loadNonSecretSettings, loadRedactedSettings, saveNonSecretSettings, resolveSettings,
@@ -39,10 +39,13 @@ import { allProviderInfos } from './ai/provider-registry'
 import { testProviderConnection } from './ai/connection-test'
 import { fetchModelsForProvider } from './ai/model-fetch'
 import { hasVisionPass, recordVisionPass } from './vision-approvals'
-import { startWatching, stopAnalysisLoop, pauseAnalysisLoop, resumeAnalysisLoop, setQuietMode, handleQuestion, handleSendPromptRequest, stopSignal } from './analysis-loop'
+import {
+  startWatching, stopAnalysisLoop, pauseAnalysisLoop, resumeAnalysisLoop, setQuietMode, handleQuestion, handleSendPromptRequest, stopSignal,
+  analyzeNow, getWatchStatus, getDisplayedAnalysis, setWatchBroadcast, setWatchMessage,
+} from './analysis-loop'
 import {
   parseInput, assertFromMainWindow, assertFromGuidanceWindow, assertFromWindowIds, isAllowedBaseUrl,
-  nonSecretSettingsSchema, setSecretSchema, captureResultSchema, projectMemorySchema,
+  nonSecretSettingsSchema, setSecretSchema, projectMemorySchema,
   goalPartialSchema, shortText, sourceId as sourceIdSchema, windowName as windowNameSchema,
   confidenceEnum, chatHistorySchema, promptIdSchema,
   projectIdSchema, projectCreateSchema, projectRenameSchema,
@@ -138,41 +141,27 @@ export function registerIpcHandlers(
     }
   })
 
-  // ─── Screen capture ─────────────────────────────────────────────────────────
+  // ─── The one watch (robot + Guidance tab) ───────────────────────────────────
+  // Main owns the watch: which window, Auto on/off, whether an analysis is
+  // running. Every change goes to both the robot and the main window, and every
+  // analysis the robot gets goes to the Guidance tab too (analysis-loop.ts).
 
-  ipcMain.handle(IPC.CAPTURE_WINDOW, async (_event, rawSourceId: unknown, rawExpectedName: unknown) => {
-    try {
-      const sid = rawSourceId == null ? null : parseInput(sourceIdSchema, 'CAPTURE_WINDOW', rawSourceId)
-      const ename = rawExpectedName == null ? null : parseInput(windowNameSchema, 'CAPTURE_WINDOW', rawExpectedName)
-      if (!(await captureNoticeAccepted('CAPTURE_WINDOW'))) throw new Error(CAPTURE_NOTICE_REQUIRED_MESSAGE)
-      const stop = stopSignal()
-      if (stop.aborted) throw new CancelledError()
-      const outcome = await captureWindowForAnalysis(sid, ename)
-      if (stop.aborted) throw new CancelledError() // Stop pressed meanwhile: drop it
-      return outcome
-    } catch (error) {
-      console.error('[IPC] CAPTURE_WINDOW error:', error)
-      throw error
-    }
+  setWatchBroadcast({
+    status: (status) => {
+      for (const win of [getCompanionWindow(), getMainWindow()]) {
+        if (win && !win.isDestroyed()) win.webContents.send(IPC.WATCH_STATUS, status)
+      }
+    },
+    analysis: (analysis) => {
+      const main = getMainWindow()
+      if (!main.isDestroyed()) main.webContents.send(IPC.ANALYSIS_RESULT, analysis)
+    },
   })
 
-  // ─── Screen analysis (provider-agnostic) ────────────────────────────────────
+  ipcMain.handle(IPC.WATCH_STATUS_GET, async () => ({ status: getWatchStatus(), analysis: getDisplayedAnalysis() }))
 
-  ipcMain.handle(IPC.ANALYZE, async (_event, captureRaw: unknown, projectRaw: unknown, settingsRaw: unknown) => {
-    try {
-      const capture = parseInput(captureResultSchema, 'ANALYZE', captureRaw)
-      const project = parseInput(projectMemorySchema, 'ANALYZE', projectRaw)
-      const settings = resolveValidatedSettings('ANALYZE', settingsRaw)
-      if (!(await captureNoticeAccepted('ANALYZE'))) throw new Error(CAPTURE_NOTICE_REQUIRED_MESSAGE)
-      assertModelUsable(settings)
-      const provider = getProvider(settings.provider)
-      // Stop cancels a manual analysis in flight, like the watch loop.
-      return await withCancellation(stopSignal(), () => provider.analyzeScreen(capture as never, project as never, settings))
-    } catch (error) {
-      console.error('[IPC] ANALYZE error:', error)
-      throw error
-    }
-  })
+  // Analyze Now (Guidance tab): the watch's own analysis cycle, run now.
+  ipcMain.handle(IPC.ANALYZE_NOW, async (): Promise<AnalyzeNowResult> => analyzeNow())
 
   // ─── Brainstorm streaming (provider-agnostic) ───────────────────────────────
 
@@ -553,16 +542,19 @@ export function registerIpcHandlers(
     IPC.SELECT_WATCH_SOURCE,
     // Returns whether watching started and, if not, the plain-English reason
     // (the setup wizard shows it; the mascot gets the same message as before).
-    async (_event, sourceIdRaw: unknown, windowNameRaw: unknown): Promise<WatchStartResult> => {
+    // `auto` false: the Guidance tab's Analyze Now on a new window — one first
+    // analysis, then the watch stays paused (Auto off) on that window.
+    async (_event, sourceIdRaw: unknown, windowNameRaw: unknown, autoRaw: unknown): Promise<WatchStartResult> => {
       const companion = getCompanionWindow()
       if (!companion) return { started: false, message: null }
       const refuse = (message: string): WatchStartResult => {
-        companion.webContents.send(IPC.COMPANION_WATCHED_SOURCE, { windowName: null, message })
+        setWatchMessage(message)
         return { started: false, message }
       }
       try {
         const sid = parseInput(sourceIdSchema, 'SELECT_WATCH_SOURCE', sourceIdRaw)
         const wname = parseInput(windowNameSchema, 'SELECT_WATCH_SOURCE', windowNameRaw)
+        const auto = autoRaw !== false
 
         // Gate 1: no key / no model → refuse (no default model exists).
         const settings = await loadSettings()
@@ -599,7 +591,7 @@ export function registerIpcHandlers(
 
         // The loop reloads settings + goal at the START of each cycle (async getters),
         // so editing the goal or settings mid-watch takes effect without restarting.
-        startWatching(companion, sid, wname, () => loadSettings(), () => loadGoal())
+        startWatching(companion, sid, wname, () => loadSettings(), () => loadGoal(), auto)
         return { started: true, message: null }
       } catch (error) {
         console.error('[IPC] SELECT_WATCH_SOURCE error:', error)
@@ -608,23 +600,25 @@ export function registerIpcHandlers(
     }
   )
 
-  // Stop: end the watch, cancel everything in flight (stopAnalysisLoop aborts
-  // the Stop signal: watch analysis, Guidance-screen analysis, transcription,
-  // spoken questions), tell the Guidance screen to cancel its runs and timer,
-  // and tell the mascot nothing is watched.
+  // Stop (on the robot or in the Guidance tab): end the watch and cancel
+  // everything in flight (stopAnalysisLoop aborts the Stop signal: analysis,
+  // transcription, spoken questions; both windows get the new status), silence
+  // the voice, and tell both windows so the robot drops a recording in progress.
   ipcMain.handle(IPC.COMPANION_STOP, async () => {
     stopAnalysisLoop('user-stop')
+    stopVoice()
+    resetVoiceDedup()
     hideGuidanceWindow()
-    const main = getMainWindow()
-    if (main && !main.isDestroyed()) main.webContents.send(IPC.STOPPED)
-    const companion = getCompanionWindow()
-    if (companion && !companion.isDestroyed()) {
-      companion.webContents.send(IPC.COMPANION_WATCHED_SOURCE, { windowName: null, message: null })
+    for (const win of [getMainWindow(), getCompanionWindow()]) {
+      if (win && !win.isDestroyed()) win.webContents.send(IPC.STOPPED)
     }
   })
 
+  // Auto off (Pause on the robot, Auto in the Guidance tab): stop watching for
+  // now, keep the window; whatever is being said stops too.
   ipcMain.handle(IPC.COMPANION_PAUSE, async () => {
     pauseAnalysisLoop()
+    stopVoice()
   })
 
   ipcMain.handle(IPC.COMPANION_RESUME, async () => {
@@ -642,7 +636,7 @@ export function registerIpcHandlers(
     try {
       const question = parseInput(shortText, 'ASK_QUESTION', questionRaw)
       if (!(await captureNoticeAccepted('ASK_QUESTION'))) {
-        companion.webContents.send(IPC.COMPANION_WATCHED_SOURCE, { windowName: null, message: CAPTURE_NOTICE_REQUIRED_MESSAGE })
+        setWatchMessage(CAPTURE_NOTICE_REQUIRED_MESSAGE)
         return
       }
       const settings = await getFreshSettings()

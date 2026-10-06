@@ -25,26 +25,16 @@ describe('project switch resets per-project renderer state', () => {
     expect(after.latestAnalysis).toBeNull()
   })
 
-  it('clears the Guidance screen: window source, cached window captures, phase and auto-analysis', () => {
-    useAppStore.setState({
-      selectedWindowSourceId: 'window:42:0',
-      selectedWindowName: 'Project A terminal',
-      availableWindows: [{ id: 'window:42:0', name: 'Project A terminal', thumbnailBase64: 'AAAA' }],
-      analysisPhase: 'analyzing',
-      analysisErrorMessage: 'old error',
-      autoAnalysisEnabled: true,
-      secondsUntilNextAutoAnalysis: 12,
-    })
+  it('the Guidance tab follows the one watch: nothing watched any more clears its analysis', () => {
+    const s = useAppStore.getState()
+    s.applyWatchStatus({ windowName: 'Windows PowerShell', auto: true, analyzing: false, message: null })
+    s.setLatestAnalysis({ whatIsHappening: 'agent idle' } as never)
+    useAppStore.getState().applyWatchStatus({ windowName: 'Windows PowerShell', auto: false, analyzing: true, message: null })
+    expect(useAppStore.getState().latestAnalysis).not.toBeNull() // paused / analysing: the result stays
 
-    useAppStore.getState().resetForProjectSwitch()
-
+    useAppStore.getState().applyWatchStatus({ windowName: null, auto: false, analyzing: false, message: null })
     const after = useAppStore.getState()
-    expect(after.selectedWindowSourceId).toBeNull()
-    expect(after.selectedWindowName).toBeNull()
-    expect(after.availableWindows).toEqual([])
-    expect(after.analysisPhase).toBe('idle')
-    expect(after.analysisErrorMessage).toBeNull()
-    expect(after.autoAnalysisEnabled).toBe(false)
-    expect(after.secondsUntilNextAutoAnalysis).toBe(0)
+    expect(after.watchStatus.windowName).toBeNull()
+    expect(after.latestAnalysis).toBeNull()
   })
 })

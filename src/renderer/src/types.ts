@@ -384,14 +384,6 @@ export interface CaptureResult {
   capturedAt: string           // ISO date string
 }
 
-// Result of a manual capture request. There is NO full-screen fallback: if the
-// selected window is missing, capture halts with a reason so the app can prompt
-// for reselection instead of sending the whole desktop to a provider.
-export type CaptureOutcome =
-  | { ok: true; capture: CaptureResult }
-  // window-minimized: not capturable right now, but the OS says it is still open.
-  | { ok: false; reason: 'no-source' | 'window-missing' | 'window-minimized' }
-
 // ─── Analysis ─────────────────────────────────────────────────────────────────
 
 // The exact JSON shape the AI must return for screen analysis.
@@ -528,6 +520,18 @@ export interface WatchStartResult {
   message: string | null
 }
 
+// The one watch, as the robot and the Guidance tab both show it. Main owns it
+// (analysis-loop.ts) and sends it to both windows on every change.
+export interface WatchStatus {
+  windowName: string | null   // the watched window; null = nothing watched
+  auto: boolean               // watching continuously (the robot watching, Auto on); false = paused / off
+  analyzing: boolean          // an analysis of the watched window is running right now
+  message: string | null      // why watching stopped or can't start, or what needs the user
+}
+
+// "Analyze Now": started, already running (its result is on the way), or no window watched yet.
+export type AnalyzeNowResult = 'started' | 'already-running' | 'no-window'
+
 // ─── First-run setup wizard ──────────────────────────────────────────────────
 export interface SetupPermissionStatus {
   screen: 'granted' | 'not-granted' | 'unknown'
@@ -578,8 +582,10 @@ export interface ExtractedProjectData {
 
 export const IPC = {
   LIST_WINDOWS:        'mybuildy:list-windows',
-  CAPTURE_WINDOW:      'mybuildy:capture-window',
-  ANALYZE:             'mybuildy:analyze',
+  ANALYZE_NOW:         'mybuildy:analyze-now',         // renderer → main (one analysis of the watched window, now)
+  WATCH_STATUS:        'mybuildy:watch-status',        // main → robot + main window (the one WatchStatus)
+  WATCH_STATUS_GET:    'mybuildy:watch-status-get',    // renderer → main (current WatchStatus + the analysis on display)
+  ANALYSIS_RESULT:     'mybuildy:analysis-result',     // main → main window (each analysis the robot gets, for the Guidance tab)
   BRAINSTORM_START:    'mybuildy:brainstorm-start',
   BRAINSTORM_CHUNK:    'mybuildy:brainstorm-chunk',    // main → renderer push
   BRAINSTORM_DONE:     'mybuildy:brainstorm-done',     // main → renderer push
@@ -593,8 +599,8 @@ export const IPC = {
   COMPANION_SPEAK:     'mybuildy:companion-speak',     // main → companion (trigger voice)
   COMPANION_START:     'mybuildy:companion-start',     // renderer → main (start watching)
   COMPANION_STOP:      'mybuildy:companion-stop',      // renderer → main (stop watching)
-  COMPANION_PAUSE:     'mybuildy:companion-pause',     // renderer → main (pause analysis)
-  COMPANION_RESUME:    'mybuildy:companion-resume',    // renderer → main (resume analysis)
+  COMPANION_PAUSE:     'mybuildy:companion-pause',     // renderer → main (Auto off: pause watching)
+  COMPANION_RESUME:    'mybuildy:companion-resume',    // renderer → main (Auto on: resume watching)
   COMPANION_QUIET:     'mybuildy:companion-quiet',     // renderer → main (quiet mode toggle)
   OPEN_PANEL:          'mybuildy:open-panel',          // companion → main (open full panel)
   RESET_COMPANION:     'mybuildy:reset-companion',    // any → main (reset companion position)
@@ -605,8 +611,7 @@ export const IPC = {
   ASK_QUESTION:        'mybuildy:ask-question',       // companion → main (spoken question text)
   TRANSCRIBE_AUDIO:    'mybuildy:transcribe-audio',   // companion → main (audio buffer for Whisper STT)
   COMPANION_ANSWER:    'mybuildy:companion-answer',   // main → companion (answer to spoken question)
-  SELECT_WATCH_SOURCE: 'mybuildy:select-watch-source', // companion → main (user picks a window)
-  COMPANION_WATCHED_SOURCE: 'mybuildy:companion-watched-source', // main → companion (what's being watched)
+  SELECT_WATCH_SOURCE: 'mybuildy:select-watch-source', // robot / main window → main (user picks a window)
   GUIDANCE_SHOW:       'guidance:show',             // companion → main (show guidance panel with payload)
   GUIDANCE_HIDE:       'guidance:hide',             // companion → main (hide guidance panel)
   GUIDANCE_DATA:       'guidance:data',             // main → guidance window (payload to render)

@@ -18,42 +18,21 @@ test.afterAll(async () => {
 
 type Api = {
   mybuildy: {
-    captureWindow(sourceId: string | null, name: string | null): Promise<unknown>
-    analyze(capture: unknown, project: unknown, settings: unknown): Promise<unknown>
-    loadSettings(): Promise<unknown>
-    loadProject(): Promise<unknown>
+    captureWindow?: unknown
+    analyze?: unknown
+    analyzeNow(): Promise<string>
     transcribeAudio(audio: ArrayBuffer): Promise<{ success: boolean; error?: string }>
   }
 }
 
-test('Guidance capture is refused until the notice is accepted', async () => {
-  const error = await mybuildy.main.evaluate(async () => {
+test('no renderer can capture or upload a screen on its own: only the watch does, after the notice', async () => {
+  const result = await mybuildy.main.evaluate(async () => {
     const api = (window as unknown as Api).mybuildy
-    try {
-      await api.captureWindow('window:1:0', 'Sample Window')
-      return null
-    } catch (e) {
-      return String(e)
-    }
+    // The Guidance tab's old capture + analysis channels are gone; Analyze Now
+    // runs the watch's own cycle, and with nothing watched captures nothing.
+    return { capture: typeof api.captureWindow, analyze: typeof api.analyze, analyzeNow: await api.analyzeNow() }
   })
-  expect(error).toContain(CAPTURE_NOTICE_REQUIRED_MESSAGE)
-})
-
-test('manual analysis (image upload) is refused until the notice is accepted', async () => {
-  const error = await mybuildy.main.evaluate(async () => {
-    const api = (window as unknown as Api).mybuildy
-    const settings = (await api.loadSettings()) as Record<string, unknown>
-    const project = await api.loadProject()
-    const nonSecret = { ...settings }
-    for (const k of ['hasApiKey', 'secretFlags']) delete nonSecret[k]
-    try {
-      await api.analyze({ imageBase64: 'AAAA', windowTitle: 'Sample Window', sourceId: 'window:1:0', capturedAt: new Date().toISOString() }, project, nonSecret)
-      return null
-    } catch (e) {
-      return String(e)
-    }
-  })
-  expect(error).toContain(CAPTURE_NOTICE_REQUIRED_MESSAGE)
+  expect(result).toEqual({ capture: 'undefined', analyze: 'undefined', analyzeNow: 'no-window' })
 })
 
 test('spoken-question audio is not uploaded until the notice is accepted', async () => {

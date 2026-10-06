@@ -11,9 +11,9 @@ import type { HandoffRef } from '../renderer/src/handoff'
 import type {
   VisionCheckResult,
   WindowSource,
-  CaptureResult,
-  CaptureOutcome,
   WatchStartResult,
+  WatchStatus,
+  AnalyzeNowResult,
   DeleteProjectResult,
   SetupInfo,
   SetupPermissionStatus,
@@ -49,18 +49,27 @@ const mybuildyAPI = {
   listWindows: (): Promise<WindowSource[]> =>
     ipcRenderer.invoke(IPC.LIST_WINDOWS),
 
-  // ─── Screen capture ──────────────────────────────────────────────────────
-  // Returns a halt outcome (never a full-screen image) when the window is missing.
-  captureWindow: (sourceId: string | null, expectedName?: string | null): Promise<CaptureOutcome> =>
-    ipcRenderer.invoke(IPC.CAPTURE_WINDOW, sourceId, expectedName ?? null),
+  // ─── The one watch (robot + Guidance tab) ────────────────────────────────
+  // Main owns it; both windows show what it sends. Analyze Now runs the watch's
+  // own analysis of the watched window.
+  analyzeNow: (): Promise<AnalyzeNowResult> =>
+    ipcRenderer.invoke(IPC.ANALYZE_NOW),
 
-  // ─── Analysis ────────────────────────────────────────────────────────────
-  analyze: (
-    capture: CaptureResult,
-    project: ProjectMemory,
-    settings: NonSecretSettings
-  ): Promise<AnalysisResult> =>
-    ipcRenderer.invoke(IPC.ANALYZE, capture, project, settings),
+  getWatchStatus: (): Promise<{ status: WatchStatus; analysis: AnalysisResult | null }> =>
+    ipcRenderer.invoke(IPC.WATCH_STATUS_GET),
+
+  onWatchStatus: (handler: (status: WatchStatus) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, status: WatchStatus) => handler(status)
+    ipcRenderer.on(IPC.WATCH_STATUS, listener)
+    return () => ipcRenderer.removeListener(IPC.WATCH_STATUS, listener)
+  },
+
+  // Every analysis the robot gets, for the Guidance tab.
+  onAnalysisResult: (handler: (analysis: AnalysisResult) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, analysis: AnalysisResult) => handler(analysis)
+    ipcRenderer.on(IPC.ANALYSIS_RESULT, listener)
+    return () => ipcRenderer.removeListener(IPC.ANALYSIS_RESULT, listener)
+  },
 
   // ─── Brainstorm streaming ─────────────────────────────────────────────────
   // Start the stream — chunks arrive via onBrainstormChunk
@@ -208,17 +217,9 @@ const mybuildyAPI = {
   stopCompanion: (): Promise<void> =>
     ipcRenderer.invoke(IPC.COMPANION_STOP),
 
-  selectWatchSource: (sourceId: string, windowName: string): Promise<WatchStartResult> =>
-    ipcRenderer.invoke(IPC.SELECT_WATCH_SOURCE, sourceId, windowName),
-
-  onWatchedSourceChanged: (handler: (event: unknown, data: { windowName: string | null; message: string | null }) => void): (() => void) => {
-    const listener = (
-      _event: Electron.IpcRendererEvent,
-      data: { windowName: string | null; message: string | null }
-    ) => handler(_event, data)
-    ipcRenderer.on(IPC.COMPANION_WATCHED_SOURCE, listener)
-    return () => ipcRenderer.removeListener(IPC.COMPANION_WATCHED_SOURCE, listener)
-  },
+  // auto false: Analyze Now on a new window — one analysis, then Auto stays off.
+  selectWatchSource: (sourceId: string, windowName: string, auto = true): Promise<WatchStartResult> =>
+    ipcRenderer.invoke(IPC.SELECT_WATCH_SOURCE, sourceId, windowName, auto),
 
   pauseCompanion: (): Promise<void> =>
     ipcRenderer.invoke(IPC.COMPANION_PAUSE),

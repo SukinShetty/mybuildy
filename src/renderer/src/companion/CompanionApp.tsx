@@ -12,7 +12,7 @@ import { nextStepLabel } from './next-step'
 import { ResolvedHandoffs } from '../handoff'
 import { robotSizeText } from '../robot-size'
 import { BAR_BACKGROUND_CSS, ICON_COLOR, ICON_HOVER_COLOR, ICON_HOVER_BACKGROUND_CSS } from './robot-theme'
-import type { AnalysisResult } from '../types'
+import type { AnalysisResult, WatchStatus } from '../types'
 import { isModelConfigured, CAPTURE_NOTICE_MESSAGE } from '../types'
 import type { CompanionState, MicState } from '../store/useCompanionStore'
 
@@ -21,10 +21,10 @@ interface WindowItem { id: string; name: string; thumbnailBase64: string }
 export function CompanionApp(): React.ReactElement {
   const {
     avatarState, latestAnalysis, isMuted, isPaused, isQuietMode,
-    watchedWindowName, watchedSourceMessage, showWindowPicker,
+    watchedWindowName, watchedSourceMessage, analyzing, pastedPromptId, showWindowPicker,
     micState, micError, lastAnswer,
-    setAvatarState, setLatestAnalysis, setMuted, setPaused, setQuietMode,
-    setWatchedSource, setShowWindowPicker,
+    setAvatarState, setLatestAnalysis, setMuted, setQuietMode,
+    setWatchStatus, setPastedPromptId, setShowWindowPicker,
     setMicState, setMicError, setLastAnswer,
     clearAnalysis,
   } = useCompanionStore()
@@ -103,7 +103,22 @@ export function CompanionApp(): React.ReactElement {
   // ─── IPC listeners (once) ───────────────────────────────────────────
 
   useEffect(() => {
+    // The one watch (main owns it; the Guidance tab shows the same). Nothing
+    // watched any more: the old analysis, glow, badge and panel go with it.
+    const applyWatchStatus = (s: WatchStatus): void => {
+      setWatchStatus(s)
+      if (!s.windowName) { clearAnalysis(); resetMascotSignals(); window.mybuildy.hideGuidance() }
+    }
+    void window.mybuildy.getWatchStatus().then(({ status }) => applyWatchStatus(status))
     const unsubs = [
+      window.mybuildy.onWatchStatus(applyWatchStatus),
+      // Stop, from here or the Guidance tab: drop a recording in progress (main
+      // has already ended the watch and silenced the voice).
+      window.mybuildy.onStopped(() => {
+        discardRecording()
+        setMicState('idle'); setAvatarState('idle')
+        setShowAlertBadge(false)
+      }),
       window.mybuildy.onCompanionAnalysis((_: unknown, a: AnalysisResult) => {
         setLastAnswer(null)
         setLatestAnalysis(a)
@@ -127,10 +142,6 @@ export function CompanionApp(): React.ReactElement {
       window.mybuildy.onCompanionState((_: unknown, s: string) => setAvatarState(s as CompanionState)),
       // NOTE: audio is no longer played here. Playback lives in the main-process
       // voice player (hidden window) so it survives this window being backgrounded.
-      window.mybuildy.onWatchedSourceChanged((_: unknown, d: { windowName: string | null; message: string | null }) => {
-        setWatchedSource(d.windowName, d.message)
-        if (!d.windowName) { clearAnalysis(); resetMascotSignals(); window.mybuildy.hideGuidance() }
-      }),
       window.mybuildy.onCompanionAnswer((_: unknown, d: { question: string; answer: string }) => {
         setLastAnswer(d)
         setMicState('idle')
@@ -143,6 +154,8 @@ export function CompanionApp(): React.ReactElement {
       // Brief "Sent" status after a successful Send to Claude Code.
       window.mybuildy.onSendStatus((_: unknown, status: string) => {
         if (status === 'sent') {
+          // That prompt is done: the line never offers to paste it again.
+          setPastedPromptId(useCompanionStore.getState().latestAnalysis?.promptId ?? null)
           setSentFlash(true)
           setTimeout(() => setSentFlash(false), 2000)
         }
@@ -188,7 +201,6 @@ export function CompanionApp(): React.ReactElement {
     resetMascotSignals()  // fresh session: no stale glow/badge from the old window
     window.mybuildy.hideGuidance()  // drop any stale guidance from the previous window
     window.mybuildy.voice.resetDedup()  // fresh watching session can speak anything
-    setWatchedSource(name, null)
     await window.mybuildy.selectWatchSource(id, name)
   }
 
@@ -315,20 +327,19 @@ export function CompanionApp(): React.ReactElement {
     else if (lastAnswer) window.mybuildy.showGuidanceAnswer(lastAnswer)
     else openPicker()
   }
-  // Stop means stop: end the watch (main cancels any in-flight analysis), silence
-  // the voice, and discard an active recording without transcribing it.
+  // Stop means stop: main ends the watch (cancelling any analysis in flight) and
+  // silences the voice, then tells this window and the Guidance tab (onStopped
+  // above discards an active recording without transcribing it).
   function onStop(): void {
     discardRecording()
     void window.mybuildy.stopCompanion()
-    window.mybuildy.voice.stop(); window.mybuildy.voice.resetDedup()
-    setMicState('idle'); setAvatarState('idle')
-    setShowAlertBadge(false)
-    window.mybuildy.hideGuidance()
   }
   function onMute(): void { const m = !isMuted; setMuted(m); window.mybuildy.voice.setMuted(m) }
+  // Pause / Resume = Auto off / on in the Guidance tab. Main pauses (and
+  // silences the voice) and sends the new status to both windows.
   function onPause(): void {
-    const p = !isPaused; setPaused(p)
-    if (p) { window.mybuildy.pauseCompanion(); window.mybuildy.voice.stop() } else { window.mybuildy.resumeCompanion() }
+    if (isPaused) void window.mybuildy.resumeCompanion()
+    else void window.mybuildy.pauseCompanion()
   }
   function onQuiet(): void { const q = !isQuietMode; setQuietMode(q); window.mybuildy.setQuietMode(q) }
   function onSettings(): void { window.mybuildy.openPanel() }
@@ -375,13 +386,15 @@ export function CompanionApp(): React.ReactElement {
   // ─── Render ─────────────────────────────────────────────────────────
 
   // Always the next action, in plain words (next-step.ts).
+  const promptAlreadyPasted = !!latestAnalysis?.promptId && latestAnalysis.promptId === pastedPromptId
   const watchLabel = nextStepLabel({
     needsSetup,
     pastedJustNow: sentFlash,
     watchedSourceMessage,
     watchedWindowName,
     isPaused,
-    thinking: avatarState === 'thinking',
+    thinking: analyzing || avatarState === 'thinking',
+    promptAlreadyPasted,
     analysis: latestAnalysis,
   })
 
@@ -392,14 +405,14 @@ export function CompanionApp(): React.ReactElement {
     : null
 
   // What is going on, for the robot's animation (robot-animation.ts maps it).
-  const analysing = avatarState === 'thinking' || micState === 'transcribing' || micState === 'answering'
+  const analysing = analyzing || avatarState === 'thinking' || micState === 'transcribing' || micState === 'answering'
   const robotSituation: RobotSituation = {
     dragging,
     dragDirection,
     analysing,
     handoffOpen: !!latestAnalysis?.needsHumanJudgment && !resolvedHandoffsRef.current.isResolved(latestAnalysis),
     agentWorking: !!watchedWindowName && latestAnalysis?.terminalState === 'working',
-    promptReady: !!watchedWindowName && !sentFlash && !!latestAnalysis?.nextPrompt?.trim(),
+    promptReady: !!watchedWindowName && !sentFlash && !promptAlreadyPasted && !!latestAnalysis?.nextPrompt?.trim(),
     needsUser: needsSetup || !!watchedSourceMessage || latestAnalysis?.terminalState === 'permission_prompt',
     paused: isPaused,
   }
@@ -434,7 +447,14 @@ export function CompanionApp(): React.ReactElement {
         />
       </div>
 
-      <div style={S.watchLabel} title={watchLabel}>{watchLabel}</div>
+      <div
+        style={S.watchLabel}
+        title={watchedWindowName ? `${watchLabel}\nWatching: ${watchedWindowName}` : watchLabel}
+        data-testid="robot-next-step"
+        data-window={watchedWindowName ?? ''}
+      >
+        {watchLabel}
+      </div>
 
       {/* Control pill */}
       <div style={S.pill} className="robot-bar">
@@ -493,7 +513,7 @@ export function CompanionApp(): React.ReactElement {
           <div style={S.pickerHead}>Show MyBuildy your coding agent</div>
           <div style={S.pickerScroll}>
             {windowList.map((w) => (
-              <button key={w.id} onClick={() => pickWindow(w.id, w.name)} style={S.pickerRow}>
+              <button key={w.id} data-window-id={w.id} data-window-name={w.name} onClick={() => pickWindow(w.id, w.name)} style={S.pickerRow}>
                 <img src={`data:image/jpeg;base64,${w.thumbnailBase64}`} style={S.pickerThumb} alt="" />
                 <span style={S.pickerName}>{trunc(w.name, 28)}</span>
               </button>

@@ -57,15 +57,13 @@ test('watching is blocked with the "Choose a model in Settings" message', async 
   const result = await mybuildy.companion.evaluate(async () => {
     const api = (window as unknown as {
       mybuildy: {
-        onWatchedSourceChanged(
-          handler: (event: unknown, data: { windowName: string | null; message: string | null }) => void
-        ): () => void
+        onWatchStatus(handler: (data: { windowName: string | null; message: string | null }) => void): () => void
         selectWatchSource(sourceId: string, windowName: string): Promise<void>
       }
     }).mybuildy
     return new Promise<{ windowName: string | null; message: string | null }>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('no watched-source response within 10s')), 10_000)
-      const unsubscribe = api.onWatchedSourceChanged((_event, data) => {
+      const timer = setTimeout(() => reject(new Error('no watch-status response within 10s')), 10_000)
+      const unsubscribe = api.onWatchStatus((data) => {
         clearTimeout(timer)
         unsubscribe()
         resolve(data)

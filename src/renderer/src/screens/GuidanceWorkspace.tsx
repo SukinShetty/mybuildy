@@ -1,137 +1,114 @@
 // GuidanceWorkspace.tsx
-// The main analysis screen. User clicks "Analyze Now" (or enables auto),
-// MyBuildy captures the Claude Code window and returns 7-section guidance.
-//
-// State flow:
-//   idle → listing-windows → awaiting-window-selection → capturing → analyzing → done
+// The Guidance tab. It is a second view of the robot's one watch — main owns
+// it (analysis-loop.ts) and both show the same thing:
+//   - the watched window: choosing one here or on the robot sets it for both
+//   - Analyze Now: the watch's own analysis of that window, run now; the robot
+//     works and thinks while it runs, and the result shows in both places
+//   - Auto: the robot watching (on) or paused (off)
+//   - Stop: ends the watch everywhere
 
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { GuidanceSections } from '../components/GuidanceSections'
 import { PromptCard } from '../components/PromptCard'
 import { WindowPicker } from '../components/WindowPicker'
 import { CAPTURE_NOTICE_MESSAGE } from '../types'
-import { guidanceController, setGuidanceNoticeHandler } from '../guidance/guidance-instance'
+import type { WindowSource } from '../types'
 
-const AUTO_ANALYSIS_INTERVAL_SECONDS = 30
+// What choosing a window here goes on to do.
+type PickPurpose = 'analyze' | 'auto'
 
 export function GuidanceWorkspace(): React.ReactElement {
-  const {
-    project,
-    settings,
-    analysisPhase,
-    availableWindows,
-    selectedWindowSourceId,
-    selectedWindowName,
-    latestAnalysis,
-    analysisErrorMessage,
-    autoAnalysisEnabled,
-    secondsUntilNextAutoAnalysis,
-    setAnalysisPhase,
-    setAvailableWindows,
-    setSelectedWindow,
-    setLatestAnalysis,
-    setAnalysisError,
-    setAutoAnalysisEnabled,
-    setSecondsUntilNextAutoAnalysis,
-    setCurrentScreen,
-    setSettings,
-  } = useAppStore()
+  const { project, settings, watchStatus, latestAnalysis, setCurrentScreen, setSettings } = useAppStore()
 
-  const [windowPickerVisible, setWindowPickerVisible] = useState(false)
+  const [picker, setPicker] = useState<{ purpose: PickPurpose; windows: WindowSource[] } | null>(null)
   const [pendingWindowId, setPendingWindowId] = useState<string | null>(null)
-  // The one-time capture notice, shown before this screen captures anything.
-  const [noticePending, setNoticePending] = useState<{ sourceId: string | null; expectedName: string | null } | null>(null)
+  const [listingWindows, setListingWindows] = useState(false)
+  // The one-time capture notice, shown before the first window is watched.
+  const [noticePending, setNoticePending] = useState<{ win: WindowSource; purpose: PickPurpose } | null>(null)
+  const [pickError, setPickError] = useState<string | null>(null)
 
   // settings is REDACTED (no raw keys) — check the has* boolean + base URL.
   const apiIsConfigured = settings.hasApiKey || settings.baseUrl.trim().length > 0
-  const isAnalyzing = analysisPhase === 'capturing' || analysisPhase === 'analyzing'
   const projectIsConfigured = project.projectName.trim().length > 0
+  const watching = watchStatus.windowName !== null
+  const isAnalyzing = watchStatus.analyzing
 
-  // The controller owns capture/analysis and the auto timer (so Stop and project
-  // switches can cancel it from anywhere); this screen shows the notice it asks for.
-  useEffect(() => {
-    setGuidanceNoticeHandler(setNoticePending)
-    return () => {
-      setGuidanceNoticeHandler(() => {})
-      guidanceController.stopAuto()
+  // ─── Choosing the window (the same one the robot watches) ─────────────────
+
+  async function openPicker(purpose: PickPurpose): Promise<void> {
+    setPickError(null)
+    setListingWindows(true)
+    try {
+      const windows = await window.mybuildy.listWindows() // a fresh list every time
+      setPendingWindowId(windows[0]?.id ?? null)
+      setPicker({ purpose, windows })
+    } catch (error) {
+      setPickError(String(error))
+    } finally {
+      setListingWindows(false)
     }
-  }, [])
+  }
 
-  // ─── Analysis flow ──────────────────────────────────────────────────────────
+  async function watchWindow(win: WindowSource, purpose: PickPurpose): Promise<void> {
+    // Analyze Now on a new window: one analysis, Auto stays off. Auto on: watching.
+    const result = await window.mybuildy.selectWatchSource(win.id, win.name, purpose === 'auto')
+    if (!result.started && result.message) setPickError(result.message)
+  }
 
-  function startAnalysis(sourceId: string | null, expectedName: string | null): Promise<void> {
-    return guidanceController.analyze(sourceId, expectedName)
+  async function confirmPicker(): Promise<void> {
+    const win = picker?.windows.find((w) => w.id === pendingWindowId)
+    const purpose = picker?.purpose ?? 'analyze'
+    setPicker(null)
+    if (!win) return
+    if (!settings.captureNoticeAccepted) {
+      setNoticePending({ win, purpose })
+      return
+    }
+    await watchWindow(win, purpose)
   }
 
   async function acceptNoticeAndContinue(): Promise<void> {
     const pending = noticePending
     setNoticePending(null)
-    await guidanceController.acceptNotice(pending)
+    await window.mybuildy.acceptCaptureNotice()
+    setSettings({ ...useAppStore.getState().settings, captureNoticeAccepted: true })
+    if (pending) await watchWindow(pending.win, pending.purpose)
   }
+
+  // ─── Controls ─────────────────────────────────────────────────────────────
 
   async function handleAnalyzeNowClick(): Promise<void> {
     if (!apiIsConfigured) {
       setCurrentScreen('settings')
       return
     }
-
-    // If user has previously selected a window, reuse it
-    if (selectedWindowSourceId) {
-      await startAnalysis(selectedWindowSourceId, selectedWindowName)
-      return
-    }
-
-    // Otherwise, show the window picker (the user always chooses — no auto-detect)
-    setAnalysisPhase('listing-windows')
-    try {
-      const windows = await window.mybuildy.listWindows()
-      setAvailableWindows(windows)
-      setPendingWindowId(windows[0]?.id ?? null)
-      setWindowPickerVisible(true)
-      setAnalysisPhase('awaiting-window-selection')
-    } catch (error) {
-      setAnalysisError(String(error))
-      setAnalysisPhase('error')
-    }
+    setPickError(null)
+    const result = await window.mybuildy.analyzeNow()
+    if (result === 'no-window') await openPicker('analyze')
   }
 
-  function handleWindowPickerConfirm(): void {
-    if (!pendingWindowId) return
-    const pendingName = availableWindows.find((w) => w.id === pendingWindowId)?.name ?? null
-    setSelectedWindow(pendingWindowId, pendingName)
-    setWindowPickerVisible(false)
-    setAnalysisPhase('idle')
-    startAnalysis(pendingWindowId, pendingName)
-  }
-
-  function handleWindowPickerCancel(): void {
-    setWindowPickerVisible(false)
-    setAnalysisPhase('idle')
-  }
-
-  // ─── Auto-analysis ──────────────────────────────────────────────────────────
-
-  function enableAutoAnalysis(): void {
-    guidanceController.startAuto()
-  }
-
-  function disableAutoAnalysis(): void {
-    guidanceController.stopAuto()
+  async function handleAutoClick(): Promise<void> {
+    if (watchStatus.auto) await window.mybuildy.pauseCompanion()
+    else if (watching) await window.mybuildy.resumeCompanion()
+    else await openPicker('auto')
   }
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
+  const message = pickError ?? watchStatus.message
+
   return (
     <div style={styles.container}>
-      {/* Window picker overlay */}
-      {windowPickerVisible && (
+      {/* Window picker overlay — the same window list the robot shows */}
+      {picker && (
         <WindowPicker
-          windows={availableWindows}
+          windows={picker.windows}
           selectedId={pendingWindowId}
           onSelect={setPendingWindowId}
-          onConfirm={handleWindowPickerConfirm}
-          onCancel={handleWindowPickerCancel}
+          onConfirm={() => { void confirmPicker() }}
+          onCancel={() => setPicker(null)}
+          confirmLabel={picker.purpose === 'auto' ? 'Watch this window' : 'Analyze this window'}
         />
       )}
 
@@ -156,42 +133,62 @@ export function GuidanceWorkspace(): React.ReactElement {
       <div style={styles.controls}>
         <button
           className="btn-primary"
-          onClick={handleAnalyzeNowClick}
-          disabled={isAnalyzing || analysisPhase === 'listing-windows'}
+          onClick={() => { void handleAnalyzeNowClick() }}
+          disabled={isAnalyzing || listingWindows}
           style={styles.analyzeButton}
         >
-          {phaseButtonLabel(analysisPhase)}
+          {isAnalyzing ? 'Analyzing…' : listingWindows ? 'Finding windows…' : '📸 Analyze Now'}
         </button>
 
         <div style={styles.rightControls}>
-          {/* Change window button */}
-          {selectedWindowSourceId && (
+          {/* Change window — sets it for the robot too */}
+          {watching && (
             <button
               className="btn-ghost"
-              onClick={() => {
-                setSelectedWindow(null, null)
-                handleAnalyzeNowClick()
-              }}
+              onClick={() => { void openPicker(watchStatus.auto ? 'auto' : 'analyze') }}
               style={styles.smallButton}
-              title="Change which window to analyze"
+              title="Change which window MyBuildy watches"
+              aria-label="Change window"
             >
               🖥️
             </button>
           )}
 
-          {/* Auto-analysis toggle */}
+          {/* Auto = the robot watching */}
           <button
-            className={autoAnalysisEnabled ? 'btn-secondary' : 'btn-ghost'}
-            onClick={() => (autoAnalysisEnabled ? disableAutoAnalysis() : enableAutoAnalysis())}
+            className={watchStatus.auto ? 'btn-secondary' : 'btn-ghost'}
+            onClick={() => { void handleAutoClick() }}
             style={styles.autoButton}
             disabled={!apiIsConfigured}
+            aria-label={watchStatus.auto ? 'Turn Auto off' : 'Turn Auto on'}
+            title={watchStatus.auto ? 'Watching — click to pause' : 'Watch continuously, like the robot'}
           >
-            {autoAnalysisEnabled
-              ? `⏸ Auto (${secondsUntilNextAutoAnalysis}s)`
-              : '▶ Auto'}
+            {watchStatus.auto ? '⏸ Auto: on' : '▶ Auto'}
           </button>
+
+          {/* Stop — ends the watch on the robot too */}
+          {watching && (
+            <button
+              className="btn-ghost"
+              onClick={() => { void window.mybuildy.stopCompanion() }}
+              style={styles.autoButton}
+              title="Stop watching (the robot stops too)"
+            >
+              Stop
+            </button>
+          )}
         </div>
       </div>
+
+      {/* The watched window — the robot watches the same one */}
+      {watching && (
+        <div style={styles.watchedRow}>
+          <span style={styles.watchedLabel}>{watchStatus.auto ? 'Watching' : 'Window'}:</span>
+          <span data-testid="watched-window" style={styles.watchedName} title={watchStatus.windowName ?? ''}>
+            {watchStatus.windowName}
+          </span>
+        </div>
+      )}
 
       {/* No project warning */}
       {!projectIsConfigured && (
@@ -209,33 +206,28 @@ export function GuidanceWorkspace(): React.ReactElement {
 
       {/* Content */}
       <div style={styles.content}>
-        {/* Error state */}
-        {analysisPhase === 'error' && analysisErrorMessage && (
-          <ErrorCard message={analysisErrorMessage} onRetry={handleAnalyzeNowClick} />
+        {/* Why watching stopped, can't start, or needs you — the robot says the same */}
+        {message && !isAnalyzing && (
+          <ErrorCard message={message} onRetry={() => { void handleAnalyzeNowClick() }} />
         )}
 
         {/* Analyzing in-progress */}
-        {isAnalyzing && (
-          <LoadingCard phase={analysisPhase} />
-        )}
+        {isAnalyzing && <LoadingCard />}
 
         {/* Results */}
-        {(analysisPhase === 'done' || (latestAnalysis && analysisPhase === 'idle')) &&
-          latestAnalysis && (
-            <>
-              <GuidanceSections result={latestAnalysis} />
-              {latestAnalysis.nextPrompt && (
-                <PromptCard promptText={latestAnalysis.nextPrompt} />
-              )}
-            </>
-          )}
+        {latestAnalysis && (
+          <>
+            <GuidanceSections result={latestAnalysis} />
+            {latestAnalysis.nextPrompt && (
+              <PromptCard promptText={latestAnalysis.nextPrompt} />
+            )}
+          </>
+        )}
 
         {/* Empty state */}
-        {!latestAnalysis &&
-          !isAnalyzing &&
-          analysisPhase !== 'error' && (
-            <EmptyState onAnalyze={handleAnalyzeNowClick} apiConfigured={!!apiIsConfigured} />
-          )}
+        {!latestAnalysis && !isAnalyzing && !message && (
+          <EmptyState onAnalyze={() => { void handleAnalyzeNowClick() }} apiConfigured={!!apiIsConfigured} />
+        )}
       </div>
     </div>
   )
@@ -301,11 +293,8 @@ function EmptyState({
   )
 }
 
-function LoadingCard({ phase }: { phase: string }): React.ReactElement {
-  const message =
-    phase === 'capturing'
-      ? '📸 Taking a screenshot of Claude Code…'
-      : '🤖 MyBuildy is reading your screen and thinking…'
+function LoadingCard(): React.ReactElement {
+  const message = '🤖 MyBuildy is reading your screen and thinking…'
 
   return (
     <div style={styles.loadingCard}>
@@ -326,7 +315,7 @@ function ErrorCard({
     <div style={styles.errorCard}>
       <div style={styles.errorHeader}>
         <span>⚠️</span>
-        <span style={{ fontWeight: 600 }}>Something went wrong</span>
+        <span style={{ fontWeight: 600 }}>Needs your attention</span>
       </div>
       <p style={styles.errorText}>{message}</p>
       <button className="btn-secondary" onClick={onRetry} style={{ marginTop: 8 }}>
@@ -334,15 +323,6 @@ function ErrorCard({
       </button>
     </div>
   )
-}
-
-function phaseButtonLabel(phase: string): string {
-  switch (phase) {
-    case 'listing-windows':  return 'Finding windows…'
-    case 'capturing':        return 'Capturing screen…'
-    case 'analyzing':        return 'Analyzing…'
-    default:                 return '📸 Analyze Now'
-  }
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
@@ -440,6 +420,27 @@ const styles = {
   autoButton: {
     fontSize: 12,
     padding: '6px 10px',
+    whiteSpace: 'nowrap' as const,
+  },
+  watchedRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '6px 16px',
+    fontSize: 12,
+    color: 'var(--color-text-muted)',
+    borderBottom: '1px solid var(--color-border)',
+    flexShrink: 0,
+    minWidth: 0,
+  },
+  watchedLabel: {
+    flexShrink: 0,
+  },
+  watchedName: {
+    color: 'var(--color-text)',
+    fontWeight: 600,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
     whiteSpace: 'nowrap' as const,
   },
   setupNudge: {

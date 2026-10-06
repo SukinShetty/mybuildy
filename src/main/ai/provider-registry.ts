@@ -14,7 +14,7 @@ import {
 } from './providers/openai-compatible'
 import { GeminiProvider, geminiProviderInfo } from './providers/gemini'
 import { OllamaProvider, ollamaProviderInfo } from './providers/ollama'
-import { e2eFakes, fakeAnalysis } from '../e2e-fakes'
+import { e2eFakes, fakeAnalyzeScreen } from '../e2e-fakes'
 
 /**
  * Get the AIProvider instance for a given provider type.
@@ -23,7 +23,7 @@ export function getProvider(providerType: ProviderType): AIProvider {
   const provider = realProvider(providerType)
   // e2e only (e2e-fakes.ts): a watch started by the setup wizard test gets a
   // canned analysis — no provider is ever called.
-  if (e2eFakes()) return Object.assign(Object.create(provider) as AIProvider, { analyzeScreen: async () => fakeAnalysis() })
+  if (e2eFakes()) return Object.assign(Object.create(provider) as AIProvider, { analyzeScreen: fakeAnalyzeScreen })
   return provider
 }
 

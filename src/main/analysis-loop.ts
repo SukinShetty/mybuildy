@@ -17,7 +17,7 @@
 
 import type { BrowserWindow } from 'electron'
 import { providerHttpError, readJson } from './ai/provider-errors'
-import type { AppSettings, AnalysisResult, Goal } from '../renderer/src/types'
+import type { AppSettings, AnalysisResult, Goal, WatchStatus, AnalyzeNowResult } from '../renderer/src/types'
 import { emptyProjectMemory, CHOOSE_MODEL_MESSAGE, MAC_PERMISSION_MESSAGES } from '../renderer/src/types'
 import { IPC } from '../renderer/src/types'
 import { captureWatchedWindow, listLiveWindowSources, capturePollThumbnail } from './capturer'
@@ -174,15 +174,72 @@ let consecutiveAuthErrors = 0
 // successful cycle can clear it back to the watched-window name).
 let errorLabelShown = false
 
+// ─── The one watch status (robot + Guidance tab) ─────────────────────────────
+// What both windows show about the watch — which window, whether Auto
+// (continuous watching) is on, whether an analysis is running, and any message —
+// is derived here from the loop's own state and sent to both on every change,
+// so the robot and the Guidance tab can never disagree.
+
+export interface WatchBroadcast {
+  status(status: WatchStatus): void
+  analysis(analysis: AnalysisResult): void
+}
+
+let watchBroadcast: WatchBroadcast | null = null
+let statusMessage: string | null = null
+let analysisRunning = false
+let lastPublishedStatus = ''
+
+export function setWatchBroadcast(broadcast: WatchBroadcast | null): void {
+  watchBroadcast = broadcast
+  lastPublishedStatus = ''
+}
+
+export function getWatchStatus(): WatchStatus {
+  const windowName = isRunning && watchedSourceId && continuity?.state !== 'lost' ? watchedWindowName : null
+  return {
+    windowName,
+    auto: !!windowName && !isPaused,
+    analyzing: !!windowName && analysisRunning,
+    message: statusMessage,
+  }
+}
+
+/** The analysis the robot's panel shows now (null when there is none). */
+export function getDisplayedAnalysis(): AnalysisResult | null {
+  return displayAnalysis
+}
+
+function publishWatchStatus(): void {
+  const status = getWatchStatus()
+  const key = JSON.stringify(status)
+  if (key === lastPublishedStatus) return
+  lastPublishedStatus = key
+  watchBroadcast?.status(status)
+}
+
+/** The message under the robot and in the Guidance tab (null clears it). */
+export function setWatchMessage(message: string | null): void {
+  statusMessage = message
+  publishWatchStatus()
+}
+
+function setAnalysisRunning(running: boolean): void {
+  analysisRunning = running
+  publishWatchStatus()
+}
+
+/** Send the analysis on display to the robot (which shows it in its panel) and the Guidance tab. */
+function sendDisplayAnalysis(companionWindow: BrowserWindow, analysis: AnalysisResult): void {
+  if (!companionWindow.isDestroyed()) companionWindow.webContents.send(IPC.COMPANION_ANALYSIS, analysis)
+  watchBroadcast?.analysis(analysis)
+}
+
 /** Pause the watch and surface `message` on the mascot label + guidance panel. */
 function pauseWithMessage(companionWindow: BrowserWindow, message: string): void {
   isPaused = true
   errorLabelShown = true
-  if (!companionWindow.isDestroyed()) {
-    companionWindow.webContents.send(IPC.COMPANION_WATCHED_SOURCE, {
-      windowName: watchedWindowName, message,
-    })
-  }
+  setWatchMessage(message)
   showGuidanceWindow({ kind: 'message', message })
   notifyCompanionState(companionWindow, 'idle')
 }
@@ -197,11 +254,7 @@ function surfaceProviderError(companionWindow: BrowserWindow, error: unknown): v
   else consecutiveAuthErrors = 0
 
   errorLabelShown = true
-  if (!companionWindow.isDestroyed()) {
-    companionWindow.webContents.send(IPC.COMPANION_WATCHED_SOURCE, {
-      windowName: watchedWindowName, message: mapped.message,
-    })
-  }
+  setWatchMessage(mapped.message)
   showGuidanceWindow({ kind: 'message', message: mapped.message })
 
   if (consecutiveAuthErrors >= 3) {
@@ -211,24 +264,27 @@ function surfaceProviderError(companionWindow: BrowserWindow, error: unknown): v
 }
 
 /** Clear a previously shown error label once a cycle succeeds again. */
-function clearErrorLabel(companionWindow: BrowserWindow): void {
+function clearErrorLabel(): void {
   if (!errorLabelShown) return
   errorLabelShown = false
-  if (watchedWindowName) notifyWatchedSource(companionWindow, watchedWindowName)
+  setWatchMessage(null)
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 /**
  * Start watching a specific window. Clears all stale state.
- * Runs an immediate first analysis that always speaks.
+ * Runs an immediate first analysis that always speaks. With `auto` false (the
+ * Guidance tab's Analyze Now on a new window) that first analysis runs and the
+ * watch then stays paused — the window is chosen, Auto is off.
  */
 export function startWatching(
   companionWindow: BrowserWindow,
   sourceId: string,
   windowName: string,
   getSettings: () => Promise<AppSettings>,
-  getGoal: () => Promise<Goal | null>
+  getGoal: () => Promise<Goal | null>,
+  auto = true,
 ): void {
   clearStaleState()
 
@@ -243,8 +299,9 @@ export function startWatching(
   getGoalFn = getGoal
   watchedGoal = null
   isRunning = true
-  isPaused = false
+  isPaused = !auto
   isFirstCycle = true
+  statusMessage = null
 
   // Create fresh session context
   session = {
@@ -272,33 +329,54 @@ export function startWatching(
     void pollWatchContinuity(companionWindow, mySession)
   }, CONTINUITY_POLL_MS)
 
-  notifyWatchedSource(companionWindow, windowName)
+  publishWatchStatus()
   notifyCompanionState(companionWindow, 'idle')
 
   // IMMEDIATE first cycle, then a recursive setTimeout chain (each cycle fully
   // finishes before the next is scheduled — no overlap).
-  void runCycleAndReschedule(companionWindow, mySession)
+  void runCycleAndReschedule(companionWindow, mySession, auto ? 'scheduled' : 'manual')
 }
 
-/** Run one cycle (guarded) then schedule the next, unless the session changed.
- *  `force` bypasses the working-mode skip: used by the turn detector's own
- *  analyze-now trigger and the immediate post-send analysis. */
-async function runCycleAndReschedule(companionWindow: BrowserWindow, mySession: number, force = false): Promise<void> {
+/**
+ * "Analyze Now" (Guidance tab): one analysis of the watched window, now. It is
+ * the same cycle the watch runs — same capture, same analysis, same result on
+ * the robot and in both panels — whether Auto is on or off.
+ */
+export function analyzeNow(): AnalyzeNowResult {
+  if (!getWatchStatus().windowName || !companionRef || companionRef.isDestroyed()) return 'no-window'
+  if (inFlight) return 'already-running'
+  if (loopTimer) { clearTimeout(loopTimer); loopTimer = null }
+  void runCycleAndReschedule(companionRef, currentSession, 'manual')
+  return 'started'
+}
+
+/**
+ * How a cycle was asked for:
+ *   scheduled — the 10s timer: skipped while paused or while the agent is mid-turn
+ *   forced    — the turn detector or the post-send analysis: runs mid-turn too
+ *   manual    — Analyze Now (or a first look with Auto off): runs even while
+ *               paused, and analyses even when the screen hasn't changed
+ */
+type CycleMode = 'scheduled' | 'forced' | 'manual'
+
+/** Run one cycle (guarded) then schedule the next, unless the session changed. */
+async function runCycleAndReschedule(companionWindow: BrowserWindow, mySession: number, mode: CycleMode = 'scheduled'): Promise<void> {
   if (mySession !== currentSession) return // a newer session superseded this chain
-  if (!isPaused && !inFlight && watchedSourceId) {
-    if (!force && turnDetector.isWorking(Date.now())) {
+  if ((!isPaused || mode === 'manual') && !inFlight && watchedSourceId) {
+    if (mode === 'scheduled' && turnDetector.isWorking(Date.now())) {
       // Agent mid-turn: spend nothing. The 5s local poll (below) decides when
       // the turn ended and triggers ONE analysis via runCycleAndReschedule(force).
       ensureTurnPoll(companionWindow, mySession)
     } else {
       inFlight = true
       try {
-        await withCancellation(watchAbort.signal, () => runOneAnalysisCycle(companionWindow, mySession))
+        await withCancellation(watchAbort.signal, () => runOneAnalysisCycle(companionWindow, mySession, mode === 'manual'))
       } catch (error) {
         debugError('[AnalysisLoop] Cycle error:', error)
         notifyCompanionState(companionWindow, 'idle')
       } finally {
         inFlight = false
+        setAnalysisRunning(false)
       }
     }
   }
@@ -333,6 +411,9 @@ export function stopAnalysisLoop(reason = 'stop'): void {
   getSettingsFn = null
   getGoalFn = null
   session = null
+  statusMessage = null
+  analysisRunning = false
+  publishWatchStatus()
   console.log('[AnalysisLoop] Stopped')
   void pushSendEligibility()
 }
@@ -357,17 +438,12 @@ export function stopWatchForProjectSwitch(): void {
   // The displayed analysis (and its paste authorization) belonged to the old project.
   displayAnalysis = null
   displaySession = -1
-  if (wasWatching && companion && !companion.isDestroyed()) {
-    companion.webContents.send(IPC.COMPANION_WATCHED_SOURCE, {
-      windowName: null,
-      message: 'Project switched — show MyBuildy your coding agent.',
-    })
-    notifyCompanionState(companion, 'idle')
-  }
+  if (wasWatching) setWatchMessage('Project switched — show MyBuildy your coding agent.')
+  if (wasWatching && companion && !companion.isDestroyed()) notifyCompanionState(companion, 'idle')
 }
 
-export function pauseAnalysisLoop(): void { isPaused = true }
-export function resumeAnalysisLoop(): void { isPaused = false }
+export function pauseAnalysisLoop(): void { isPaused = true; publishWatchStatus() }
+export function resumeAnalysisLoop(): void { isPaused = false; publishWatchStatus() }
 export function setQuietMode(quiet: boolean): void { isQuietMode = quiet }
 export function isAnalysisLoopRunning(): boolean { return isRunning && !isPaused && watchedSourceId !== null }
 /** A window is being watched (paused or not; a watch whose window was lost has ended) — its project must not be deleted. */
@@ -406,7 +482,7 @@ async function pollWatchContinuity(companionWindow: BrowserWindow, mySession: nu
       console.log('[Watch] title changed — same window, watch continues')
       debugLog(`[Watch] title: "${event.from}" -> "${event.to}"`)
       logWatchEvent('title-changed', { session: mySession }, { from: event.from, to: event.to })
-      notifyWatchedSource(companionWindow, event.to)
+      setWatchMessage(null)
       void pushSendEligibility()
       break
     case 'went-missing':
@@ -414,7 +490,7 @@ async function pollWatchContinuity(companionWindow: BrowserWindow, mySession: nu
       // the OS check says whether it is still open. The grace rules still run.
       console.log(`[Watch] watched window missing from source list — ${event.stillOpen ? (event.minimized ? 'minimized' : 'hidden, still open') : 'not confirmed open'}; grace period started`)
       logWatchEvent('missing', { session: mySession, stillOpen: !!event.stillOpen, minimized: !!event.minimized })
-      notifyWindowAway(companionWindow, !!event.stillOpen, !!event.minimized)
+      notifyWindowAway(!!event.stillOpen, !!event.minimized)
       void pushSendEligibility()
       break
     case 'still-open':
@@ -422,14 +498,14 @@ async function pollWatchContinuity(companionWindow: BrowserWindow, mySession: nu
       // still open (minimized or hidden) — keep the watch, restart the grace.
       console.log('[Watch] watched window still open (not in the capture list) — watch kept')
       logWatchEvent('still-open', { session: mySession, minimized: event.minimized })
-      notifyWindowAway(companionWindow, true, event.minimized)
+      notifyWindowAway(true, event.minimized)
       break
     case 'resumed':
       watchedWindowName = event.title
       console.log('[Watch] resumed — watched window is back in the source list')
       debugLog(`[Watch] resumed with title "${event.title}"`)
       logWatchEvent('resumed', { session: mySession }, { title: event.title })
-      notifyWatchedSource(companionWindow, event.title)
+      setWatchMessage(null)
       void pushSendEligibility()
       break
     case 'lost':
@@ -442,16 +518,12 @@ async function pollWatchContinuity(companionWindow: BrowserWindow, mySession: nu
 }
 
 /** Mascot label while the watched window is out of the capture list. */
-function notifyWindowAway(companionWindow: BrowserWindow, stillOpen: boolean, minimized: boolean): void {
-  if (companionWindow.isDestroyed()) return
-  companionWindow.webContents.send(IPC.COMPANION_WATCHED_SOURCE, {
-    windowName: watchedWindowName,
-    message: minimized
-      ? 'The watched window is minimized. Restore it and MyBuildy carries on watching.'
-      : stillOpen
-        ? 'The watched window is hidden. Show it and MyBuildy carries on watching.'
-        : 'Looking for the watched window…',
-  })
+function notifyWindowAway(stillOpen: boolean, minimized: boolean): void {
+  setWatchMessage(minimized
+    ? 'The watched window is minimized. Restore it and MyBuildy carries on watching.'
+    : stillOpen
+      ? 'The watched window is hidden. Show it and MyBuildy carries on watching.'
+      : 'Looking for the watched window…')
 }
 
 /** Halt exactly as the old target-lost path did: pause and ask for reselection. */
@@ -460,12 +532,7 @@ function haltWatchAsLost(companionWindow: BrowserWindow, reason: LostReason, myS
   isPaused = true
   if (continuityTimer) { clearInterval(continuityTimer); continuityTimer = null }
   stopTurnPoll()
-  if (!companionWindow.isDestroyed()) {
-    companionWindow.webContents.send(IPC.COMPANION_WATCHED_SOURCE, {
-      windowName: null,
-      message: `"${watchedWindowName}" is no longer open. Show MyBuildy your coding agent again.`,
-    })
-  }
+  setWatchMessage(`"${watchedWindowName}" is no longer open. Show MyBuildy your coding agent again.`)
   notifyCompanionState(companionWindow, 'idle')
   void pushSendEligibility()
 }
@@ -711,7 +778,8 @@ async function callProviderForAnswer(
 
 async function runOneAnalysisCycle(
   companionWindow: BrowserWindow,
-  mySession: number
+  mySession: number,
+  analyzeEvenIfUnchanged = false,
 ): Promise<void> {
   // Memory writes from this cycle go ONLY to the project active right now.
   const memScope = nemp.memoryScope()
@@ -763,14 +831,15 @@ async function runOneAnalysisCycle(
   }
 
   // Step 2: Image-level gate — SKIP for first cycle (always analyze on watch start)
-  if (!thisIsFirstCycle && previousScreenshot) {
+  if (!thisIsFirstCycle && !analyzeEvenIfUnchanged && previousScreenshot) {
     const changeFraction = computeImageChangeFraction(previousScreenshot, capture.imageBase64)
     if (changeFraction < IMAGE_CHANGE_THRESHOLD) return
   }
   previousScreenshot = capture.imageBase64
 
-  // Step 3: Analyze — pass EMPTY project, AI sees only the screenshot
-  notifyCompanionState(companionWindow, 'thinking')
+  // Step 3: Analyze — pass EMPTY project, AI sees only the screenshot.
+  // Both the robot ("working") and the Guidance tab show it is running.
+  setAnalysisRunning(true)
 
   const provider = getProvider(settings.provider)
   // Inject the user's goal AND the Nemp project-memory context so guidance is
@@ -812,7 +881,7 @@ async function runOneAnalysisCycle(
   }
 
   // A successful cycle clears any stale error message from the mascot label.
-  clearErrorLabel(companionWindow)
+  clearErrorLabel()
 
   // Update session context
   updateSession(analysis)
@@ -840,10 +909,10 @@ async function runOneAnalysisCycle(
   // Hand-off text and verdict/headline consistency (display-consistency.ts).
   displayAnalysis = prepareForDisplay(analysis)
   displaySession = mySession
-  if (!companionWindow.isDestroyed()) {
-    companionWindow.webContents.send(IPC.COMPANION_ANALYSIS, displayAnalysis)
-    noteAnalysisForRobot(displayAnalysis) // robot hidden → a system notification for alerts
-  }
+  // The analysis is done: the robot stops "working" as it gets the result.
+  setAnalysisRunning(false)
+  sendDisplayAnalysis(companionWindow, displayAnalysis)
+  if (!companionWindow.isDestroyed()) noteAnalysisForRobot(displayAnalysis) // robot hidden → a system notification for alerts
   void pushSendEligibility()
 
   // Verifier (Block 4): if a prompt was suggested on a PREVIOUS cycle, check
@@ -873,11 +942,7 @@ async function runOneAnalysisCycle(
   if (analysis.terminalState === 'permission_prompt') {
     // Prefer the model-reported agentName; the title heuristic is the fallback.
     const alertLine = permissionAlertLine(watchedWindowName, analysis.agentName)
-    if (!companionWindow.isDestroyed()) {
-      companionWindow.webContents.send(IPC.COMPANION_WATCHED_SOURCE, {
-        windowName: watchedWindowName, message: alertLine,
-      })
-    }
+    setWatchMessage(alertLine)
     // Reuse the error-label restore path: the next non-permission successful
     // cycle puts the plain watched-window name back on the mascot.
     errorLabelShown = true
@@ -992,9 +1057,6 @@ function notifyCompanionState(w: BrowserWindow, state: 'idle' | 'thinking' | 'sp
   if (!w.isDestroyed()) w.webContents.send(IPC.COMPANION_STATE, state)
 }
 
-function notifyWatchedSource(w: BrowserWindow, windowName: string): void {
-  if (!w.isDestroyed()) w.webContents.send(IPC.COMPANION_WATCHED_SOURCE, { windowName, message: null })
-}
 
 async function speakToCompanion(
   companionWindow: BrowserWindow,
@@ -1149,10 +1211,8 @@ function patchDisplayAndResend(
   // A verdict or hand-off patched on after the first display gets the same
   // clean-up: no "goal reached" next to a partial/failed badge, no checker text.
   displayAnalysis = prepareForDisplay(displayAnalysis)
-  if (!companionWindow.isDestroyed()) {
-    companionWindow.webContents.send(IPC.COMPANION_ANALYSIS, displayAnalysis)
-    noteAnalysisForRobot(displayAnalysis) // robot hidden → a system notification for alerts
-  }
+  sendDisplayAnalysis(companionWindow, displayAnalysis)
+  if (!companionWindow.isDestroyed()) noteAnalysisForRobot(displayAnalysis) // robot hidden → a system notification for alerts
   void pushSendEligibility()
 }
 
@@ -1260,12 +1320,8 @@ async function sendPromptRequest(promptId: string): Promise<SendPromptResult> {
     // the reason); the mascot label says it too, until the next good cycle.
     if (!result.sent && (result.reason === 'accessibility_permission' || result.reason === 'automation_permission')) {
       const permission = result.reason === 'accessibility_permission' ? 'accessibility' : 'automation'
-      if (companionRef && !companionRef.isDestroyed()) {
-        errorLabelShown = true
-        companionRef.webContents.send(IPC.COMPANION_WATCHED_SOURCE, {
-          windowName: watchedWindowName, message: MAC_PERMISSION_MESSAGES[permission],
-        })
-      }
+      errorLabelShown = true
+      setWatchMessage(MAC_PERMISSION_MESSAGES[permission])
     }
 
     if (shouldRegisterOutcome(result, changedAfterPaste)) {
@@ -1309,7 +1365,7 @@ function triggerImmediateAnalysis(mySession: number): void {
   console.log('[Send] triggering immediate analysis')
   // force=true: this deliberate one-off must run even in working mode (the
   // 3-min post-send window / a "working" reading would otherwise skip it).
-  void runCycleAndReschedule(companionRef, mySession, true)
+  void runCycleAndReschedule(companionRef, mySession, 'forced')
 }
 
 /**

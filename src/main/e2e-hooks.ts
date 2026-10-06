@@ -14,7 +14,7 @@
 
 import { app, type BrowserWindow } from 'electron'
 import { showGuidanceWindow } from './guidance-window'
-import { e2eFakes, type E2eFakes } from './e2e-fakes'
+import { e2eFakes, fakeAnalysisCalls, type E2eFakes } from './e2e-fakes'
 import { pressRobotShortcut } from './robot-shortcut'
 import type { SetupPermissions } from './setup-permissions'
 import { IPC, type AnalysisResult } from '../renderer/src/types'
@@ -58,6 +58,8 @@ interface E2eHooks {
   setupFakes(): E2eFakes | null
   /** Change the fake macOS permissions (the wizard's live status picks it up). */
   setFakePermissions(p: Partial<SetupPermissions>): void
+  /** How many screen analyses the fake provider has answered. */
+  fakeAnalysisCalls(): number
 }
 
 /** Register the gated e2e test hooks. No-op outside MYBUILDY_E2E=1 dev runs. */
@@ -85,6 +87,7 @@ export function registerE2eTestHooks(getCompanionWindow: () => BrowserWindow | n
     },
     pressRobotShortcut: () => pressRobotShortcut(),
     setupFakes: () => e2eFakes(),
+    fakeAnalysisCalls: () => fakeAnalysisCalls,
     setFakePermissions(p: Partial<SetupPermissions>): void {
       const fakes = e2eFakes()
       if (fakes) Object.assign(fakes.permissions, p)

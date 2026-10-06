@@ -1,7 +1,7 @@
 // capture-guard.ts — main process (ELECTRON-FREE, unit-tested)
 // Pure decision helpers for safety-critical watch behaviours:
-//   1. Screen capture must NEVER silently fall back to the full desktop. When the
-//      selected window is missing, capture halts with a reason.
+//   1. Screen capture must NEVER silently fall back to the full desktop: only
+//      the watched window, found by source id, is ever captured.
 //   2. The analysis loop must discard results from a stale watching session (the
 //      user switched/stopped the watched window while a cycle was in flight), so
 //      guidance for the wrong window is never shown or spoken.
@@ -12,28 +12,6 @@
 //      is present in every consecutive continuity poll since selection is the
 //      same window regardless of title. Only when the id DISAPPEARS does reuse
 //      become possible; the grace rules below guard that gap.
-
-export type CaptureHalt = 'no-source' | 'window-missing'
-
-/**
- * Why a selected window could not be captured: on Windows a minimized or hidden
- * window is left out of the capture list while it still exists — that is not a
- * closed window, and the user's choice of window must be kept.
- */
-export function missingWindowReason(presence: WindowPresence | null): 'window-minimized' | 'window-missing' {
-  return presence?.exists ? 'window-minimized' : 'window-missing'
-}
-
-/**
- * Decide whether a capture should halt (and why) instead of producing an image.
- * Returns null only when there IS a selected source AND it was found.
- * There is intentionally no "fall back to full screen" branch.
- */
-export function captureHaltReason(sourceId: string | null, windowFound: boolean): CaptureHalt | null {
-  if (!sourceId) return 'no-source'
-  if (!windowFound) return 'window-missing'
-  return null
-}
 
 /**
  * Locate the user's watched window in the CURRENT live window list by source id.

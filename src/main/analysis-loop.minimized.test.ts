@@ -47,22 +47,26 @@ vi.mock('./vision-approvals', () => ({ hasVisionPass: () => true }))
 vi.mock('./ai/prompt-quality-check', () => ({ checkPromptQuality: vi.fn(), buildQualityPatch: vi.fn() }))
 vi.mock('./ai/verifier-check', () => ({ verifyPromptOutcome: vi.fn() }))
 
-import { startWatching, stopAnalysisLoop, isAnalysisLoopRunning } from './analysis-loop'
-import { defaultSettings, IPC } from '../renderer/src/types'
+import { startWatching, stopAnalysisLoop, isAnalysisLoopRunning, setWatchBroadcast } from './analysis-loop'
+import { defaultSettings, type WatchStatus } from '../renderer/src/types'
 import { logWatchEvent } from './watch-log'
 
 const send = vi.fn()
 const fakeWindow = { isDestroyed: () => false, webContents: { send } } as never
 const settings = { ...defaultSettings(), provider: 'openai' as const, modelId: 'gpt-test', apiKey: 'sk-test-0000000000000000' }
 
+// What the robot and the Guidance tab are told (the one watch status).
+const statuses: WatchStatus[] = []
+setWatchBroadcast({ status: (s) => statuses.push(s), analysis: () => {} })
 function watchMessages(): Array<{ windowName: string | null; message: string | null }> {
-  return send.mock.calls.filter((c) => c[0] === IPC.COMPANION_WATCHED_SOURCE).map((c) => c[1])
+  return statuses.map((s) => ({ windowName: s.windowName, message: s.message }))
 }
 const dropped = () => watchMessages().some((m) => m.windowName === null && /no longer open/.test(m.message || ''))
 
 beforeEach(() => {
   vi.useFakeTimers()
   send.mockClear()
+  statuses.length = 0
   vi.mocked(logWatchEvent).mockClear()
   Object.assign(env, { listed: true, title: '✳ Tally', exists: true, minimized: false })
 })

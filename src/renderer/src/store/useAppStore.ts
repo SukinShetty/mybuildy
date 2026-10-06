@@ -8,9 +8,8 @@ import type {
   ProjectRecord,
   ProjectSummary,
   RedactedSettings,
-  WindowSource,
-  CaptureResult,
   AnalysisResult,
+  WatchStatus,
   ChatMessage,
   ExtractedProjectData,
 } from '../types'
@@ -20,16 +19,9 @@ import { emptyProjectMemory, defaultRedactedSettings } from '../types'
 
 export type AppScreen = 'goal' | 'brainstorm' | 'guidance' | 'memory' | 'settings'
 
-// ─── Analysis state ───────────────────────────────────────────────────────────
+// ─── The watch (owned by main, shared with the robot) ─────────────────────────
 
-export type AnalysisPhase =
-  | 'idle'
-  | 'listing-windows'
-  | 'awaiting-window-selection'
-  | 'capturing'
-  | 'analyzing'
-  | 'done'
-  | 'error'
+export const NO_WATCH: WatchStatus = { windowName: null, auto: false, analyzing: false, message: null }
 
 // ─── Brainstorm state ─────────────────────────────────────────────────────────
 
@@ -56,16 +48,9 @@ interface AppState {
   settings: RedactedSettings
   settingsAreLoaded: boolean
 
-  // ── Analysis
-  analysisPhase: AnalysisPhase
-  availableWindows: WindowSource[]
-  selectedWindowSourceId: string | null
-  selectedWindowName: string | null       // name at pick time — guards against HWND/id reuse
-  latestCapture: CaptureResult | null
+  // ── The watch, as main sends it (the robot shows the same), and the analysis on display
+  watchStatus: WatchStatus
   latestAnalysis: AnalysisResult | null
-  analysisErrorMessage: string | null
-  autoAnalysisEnabled: boolean
-  secondsUntilNextAutoAnalysis: number
 
   // ── Brainstorm chat
   brainstormMessages: ChatMessage[]
@@ -87,15 +72,9 @@ interface AppState {
   setSettings: (settings: RedactedSettings) => void
   setSettingsAreLoaded: (loaded: boolean) => void
 
-  setAnalysisPhase: (phase: AnalysisPhase) => void
-  setAvailableWindows: (windows: WindowSource[]) => void
-  setSelectedWindowSourceId: (id: string | null) => void
-  setSelectedWindow: (id: string | null, name: string | null) => void
-  setLatestCapture: (capture: CaptureResult | null) => void
+  // A new watch status from main. Nothing watched any more: the analysis goes too.
+  applyWatchStatus: (status: WatchStatus) => void
   setLatestAnalysis: (result: AnalysisResult | null) => void
-  setAnalysisError: (message: string | null) => void
-  setAutoAnalysisEnabled: (enabled: boolean) => void
-  setSecondsUntilNextAutoAnalysis: (seconds: number) => void
 
   addBrainstormUserMessage: (content: string) => void
   appendBrainstormStreamChunk: (chunk: string) => void
@@ -128,16 +107,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   settings: defaultRedactedSettings(),
   settingsAreLoaded: false,
 
-  // ── Analysis
-  analysisPhase: 'idle',
-  availableWindows: [],
-  selectedWindowSourceId: null,
-  selectedWindowName: null,
-  latestCapture: null,
+  // ── The watch
+  watchStatus: NO_WATCH,
   latestAnalysis: null,
-  analysisErrorMessage: null,
-  autoAnalysisEnabled: false,
-  secondsUntilNextAutoAnalysis: 0,
 
   // ── Brainstorm
   brainstormMessages: [],
@@ -161,17 +133,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSettings: (settings) => set({ settings }),
   setSettingsAreLoaded: (settingsAreLoaded) => set({ settingsAreLoaded }),
 
-  setAnalysisPhase: (analysisPhase) => set({ analysisPhase }),
-  setAvailableWindows: (availableWindows) => set({ availableWindows }),
-  setSelectedWindowSourceId: (selectedWindowSourceId) => set({ selectedWindowSourceId }),
-  setSelectedWindow: (selectedWindowSourceId, selectedWindowName) =>
-    set({ selectedWindowSourceId, selectedWindowName }),
-  setLatestCapture: (latestCapture) => set({ latestCapture }),
+  applyWatchStatus: (watchStatus) =>
+    set((state) => ({ watchStatus, latestAnalysis: watchStatus.windowName ? state.latestAnalysis : null })),
   setLatestAnalysis: (latestAnalysis) => set({ latestAnalysis }),
-  setAnalysisError: (analysisErrorMessage) => set({ analysisErrorMessage }),
-  setAutoAnalysisEnabled: (autoAnalysisEnabled) => set({ autoAnalysisEnabled }),
-  setSecondsUntilNextAutoAnalysis: (secondsUntilNextAutoAnalysis) =>
-    set({ secondsUntilNextAutoAnalysis }),
 
   addBrainstormUserMessage: (content) => {
     const userMessage: ChatMessage = {
@@ -227,14 +191,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       brainstormStreamingBuffer: '',
       brainstormErrorMessage: null,
       lastExtractedProjectData: null,
+      // Nothing from the old project's window survives (main ends the watch too).
       latestAnalysis: null,
-      // Guidance screen: nothing from the old project's window survives.
-      selectedWindowSourceId: null,
-      selectedWindowName: null,
-      availableWindows: [],
-      analysisPhase: 'idle',
-      analysisErrorMessage: null,
-      autoAnalysisEnabled: false,
-      secondsUntilNextAutoAnalysis: 0,
     }),
 }))

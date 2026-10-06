@@ -83,14 +83,16 @@ export interface RobotSituation {
 
 /**
  * The animation for what is going on right now. Order matters: being dragged
- * wins, then MyBuildy's own work, then a decision waiting on the user, then the
- * agent working, then a prompt or question for the user, then idle.
+ * wins, then MyBuildy's own work (an Analyze Now runs even while paused), then a
+ * decision waiting on the user, then — while paused — rest, unless a prompt is
+ * ready; otherwise the agent working, then a prompt or question for the user,
+ * then idle.
  */
 export function ongoingAnimation(s: RobotSituation): RobotAnimation {
   if (s.dragging) return s.dragDirection === 'left' ? 'running-left' : 'running-right'
-  if (s.paused) return 'idle'
   if (s.analysing) return 'working'
   if (s.handoffOpen) return 'waiting'
+  if (s.paused) return s.promptReady ? 'waving' : 'idle'
   if (s.agentWorking) return 'review'
   if (s.promptReady || s.needsUser) return 'waving'
   return 'idle'
