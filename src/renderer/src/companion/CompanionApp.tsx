@@ -46,6 +46,8 @@ export function CompanionApp(): React.ReactElement {
   // ElevenLabs failed, so the computer's voice is speaking — said plainly, with why.
   const [voiceFallback, setVoiceFallback] = useState<VoiceFallback | null>(null)
   const [voiceNoticeDismissed, setVoiceNoticeDismissed] = useState<string | null>(null)
+  // A line waits while Buildy's voice is still loading: he's getting ready to speak.
+  const [voicePreparing, setVoicePreparing] = useState(false)
   const mascotWrapRef = useRef<HTMLDivElement | null>(null)
   const isMutedRef = useRef(isMuted)
   isMutedRef.current = isMuted
@@ -121,6 +123,7 @@ export function CompanionApp(): React.ReactElement {
     void window.mybuildy.getVoiceFallback().then(setVoiceFallback)
     const unsubs = [
       window.mybuildy.onVoiceFallback(setVoiceFallback),
+      window.mybuildy.onVoicePreparing(setVoicePreparing),
       window.mybuildy.onWatchStatus(applyWatchStatus),
       // Stop, from here or the Guidance tab: drop a recording in progress (main
       // has already ended the watch and silenced the voice).
@@ -418,6 +421,7 @@ export function CompanionApp(): React.ReactElement {
     watchedWindowName,
     isPaused,
     thinking: analyzing || avatarState === 'thinking',
+    voicePreparing,
     promptAlreadyPasted,
     analysis: latestAnalysis,
   })
@@ -434,6 +438,7 @@ export function CompanionApp(): React.ReactElement {
     dragging,
     dragDirection,
     analysing,
+    voicePreparing,
     handoffOpen: !!latestAnalysis?.needsHumanJudgment && !resolvedHandoffsRef.current.isResolved(latestAnalysis),
     agentWorking: !!watchedWindowName && latestAnalysis?.terminalState === 'working',
     promptReady: !!watchedWindowName && !sentFlash && !promptAlreadyPasted && !!latestAnalysis?.nextPrompt?.trim(),

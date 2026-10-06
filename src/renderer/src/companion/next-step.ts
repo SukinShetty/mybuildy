@@ -11,6 +11,7 @@ export interface NextStepInput {
   watchedWindowName: string | null
   isPaused: boolean                      // Auto off: a window is chosen, not watched continuously
   thinking: boolean                      // an analysis (from here or the Guidance tab) or a question is running
+  voicePreparing?: boolean               // a line waits while Buildy's voice is still loading
   promptAlreadyPasted: boolean           // the analysis's prompt was pasted: that step is done
   analysis: AnalysisResult | null
 }
@@ -38,6 +39,7 @@ export function nextStepLabel(i: NextStepInput): string {
   if (i.pastedJustNow || (i.promptAlreadyPasted && !i.thinking)) return 'Pasted — now press Enter in your terminal'
   if (i.needsSetup) return 'Next: finish setting me up — click the gear'
   if (i.watchedWindowName && i.thinking) return 'Thinking about what just happened…'
+  if (i.voicePreparing) return 'Getting my voice ready…'
   if (i.watchedSourceMessage) return i.watchedSourceMessage
   if (!i.watchedWindowName) return "Next: show me your coding agent's window"
 

@@ -11,6 +11,9 @@ const h = vi.hoisted(() => ({
   kokoro: vi.fn(),
   kokoroState: { state: 'ready' } as { state: string; code?: string },
   prefetched: [] as string[][],
+  prefetchVoices: [] as string[],
+  loading: false,
+  progress: [] as Array<string | null>,
   log: [] as Array<{ event: string; details: Record<string, unknown> }>,
 }))
 
@@ -25,21 +28,27 @@ vi.mock('electron', () => ({
   },
 }))
 vi.mock('./memory', () => ({ loadSettings: async () => h.settings }))
-vi.mock('./guidance-window', () => ({ sendSpeechProgress: () => {} }))
+vi.mock('./guidance-window', () => ({ sendSpeechProgress: (text: string | null) => h.progress.push(text) }))
 vi.mock('./watch-log', () => ({ logWatchEvent: (event: string, details: Record<string, unknown> = {}) => h.log.push({ event, details }) }))
 vi.mock('./ai/elevenlabs-tts', () => ({ synthesizeSpeech: h.eleven }))
 vi.mock('./kokoro-engine', () => ({
   kokoroStatus: () => h.kokoroState,
+  kokoroIsLoading: () => h.loading,
   speakWithKokoro: h.kokoro,
-  prefetchKokoro: (s: string[]) => h.prefetched.push(s),
+  prefetchKokoro: (s: string[], voice: string) => { h.prefetched.push(s); h.prefetchVoices.push(voice) },
   clearKokoroPrefetch: () => {},
 }))
 
-import { createVoicePlayerWindow, enqueueSpeech, handleVoiceEnded, getVoiceFallback, setVoiceFallbackNotice, resetVoiceHealth, stopVoice, resetVoiceDedup } from './voice-player'
+import {
+  createVoicePlayerWindow, enqueueSpeech, handleVoiceEnded, getVoiceFallback, setVoiceFallbackNotice, resetVoiceHealth, stopVoice, resetVoiceDedup,
+  setVoicePreparingNotice, buildyVoiceChanged,
+} from './voice-player'
 import { IPC } from '../renderer/src/types'
 
 const notices: Array<{ headline: string; reason: string } | null> = []
 setVoiceFallbackNotice((n) => notices.push(n))
+const preparing: boolean[] = []
+setVoicePreparingNotice((p) => preparing.push(p))
 createVoicePlayerWindow()
 
 const LINE = 'Claude Code just finished building your invoice page. Two tests passed. Your next prompt is ready to paste.'
@@ -61,6 +70,11 @@ beforeEach(async () => {
   h.sent.length = 0
   h.log.length = 0
   h.prefetched.length = 0
+  h.prefetchVoices.length = 0
+  h.progress.length = 0
+  preparing.length = 0
+  h.loading = false
+  h.settings.buildyVoice = 'bella'
   notices.length = 0
   h.settings.elevenLabsApiKey = ''
   h.kokoroState = { state: 'ready' }
@@ -132,5 +146,45 @@ describe('the voice order', () => {
     await speak(LINE)
     expect(getVoiceFallback()?.headline).toBe("Your voice key isn't working, so MyBuildy is using your computer's voice")
     expect(getVoiceFallback()?.reason).toMatch(/didn't accept the key/)
+  })
+
+  it('Puck chosen in Settings: from the next sentence, Puck speaks; the log says so', async () => {
+    h.settings.buildyVoice = 'puck'
+    buildyVoiceChanged()
+    await new Promise((r) => setTimeout(r, 0))
+    await speak(LINE)
+    expect(h.prefetchVoices).toEqual(['puck'])
+    expect(h.kokoro.mock.calls.every((c) => c[1] === 'puck')).toBe(true)
+    expect(h.log.find((l) => l.event === 'voice-line')?.details).toMatchObject({ engine: 'kokoro', voice: 'puck' })
+  })
+
+  it("while Buildy's voice loads, a waiting line shows he's getting ready to speak — and stops showing it once he speaks", async () => {
+    h.loading = true
+    let finishLoading: () => void = () => {}
+    h.kokoro.mockImplementationOnce((sentence: string) => new Promise((resolve) => {
+      finishLoading = () => resolve(Buffer.from(`wav:${sentence}`).toString('base64'))
+    }))
+    enqueueSpeech({ id: 'line-loading', text: 'Claude Code just finished building your invoice page.' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(preparing).toEqual([true])
+    h.loading = false
+    finishLoading()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(preparing).toEqual([true, false])
+  })
+
+  it('the panel highlights a sentence only while its audio plays — not while it is being made', async () => {
+    let finish: () => void = () => {}
+    h.kokoro.mockImplementationOnce((sentence: string) => new Promise((resolve) => {
+      finish = () => resolve(Buffer.from(`wav:${sentence}`).toString('base64'))
+    }))
+    enqueueSpeech({ id: 'line-progress', text: 'Claude Code just finished building your invoice page.' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(h.progress.filter(Boolean)).toEqual([]) // being made: nothing highlighted
+    finish()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(h.progress.at(-1)).toBe('Claude Code just finished building your invoice page.') // playing
+    handleVoiceEnded(plays().at(-1)!.payload.id)
+    expect(h.progress.at(-1)).toBeNull() // ended: nothing highlighted
   })
 })

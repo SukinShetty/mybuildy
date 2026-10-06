@@ -21,6 +21,7 @@ export type VoiceFailureCode =
   | 'other'
   | 'kokoro-missing'
   | 'kokoro-failed'
+  | 'kokoro-slow'
 
 export const VOICE_FAILURE_REASONS: Record<VoiceFailureCode, string> = {
   'invalid-key': "ElevenLabs didn't accept the key. Check it was copied in full, or create a new one.",
@@ -35,6 +36,7 @@ export const VOICE_FAILURE_REASONS: Record<VoiceFailureCode, string> = {
   'other': 'ElevenLabs refused the request.',
   'kokoro-missing': "Buildy's voice files are missing from this install. Reinstalling MyBuildy puts them back.",
   'kokoro-failed': "Buildy's voice couldn't start on this computer.",
+  'kokoro-slow': "Buildy's voice is taking too long to start on this computer. It takes over as soon as it's ready.",
 }
 
 /** Which voice speaks instead. */
@@ -42,7 +44,7 @@ export type FallbackVoice = 'kokoro' | 'system'
 
 /** The notice's first line: which voice failed, and which one is speaking instead. */
 export function fallbackHeadline(code: VoiceFailureCode, speaking: FallbackVoice): string {
-  if (code === 'kokoro-missing' || code === 'kokoro-failed') {
+  if (code === 'kokoro-missing' || code === 'kokoro-failed' || code === 'kokoro-slow') {
     return "Buildy's voice couldn't start, so MyBuildy is using your computer's voice"
   }
   return speaking === 'kokoro'

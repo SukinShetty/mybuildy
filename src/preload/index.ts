@@ -15,6 +15,7 @@ import type {
   WatchStatus,
   AnalyzeNowResult,
   VoiceFallback,
+  BuildyVoice,
   DeleteProjectResult,
   SetupInfo,
   SetupPermissionStatus,
@@ -73,6 +74,20 @@ const mybuildyAPI = {
     const listener = (_event: Electron.IpcRendererEvent, fallback: VoiceFallback | null) => handler(fallback)
     ipcRenderer.on(IPC.VOICE_FALLBACK, listener)
     return () => ipcRenderer.removeListener(IPC.VOICE_FALLBACK, listener)
+  },
+
+  // Buildy's voice: choose Bella or Puck (from the next sentence), or hear a sample.
+  setBuildyVoice: (voice: BuildyVoice): Promise<void> =>
+    ipcRenderer.invoke(IPC.BUILDY_VOICE_SET, voice),
+
+  playVoiceSample: (voice: BuildyVoice): Promise<boolean> =>
+    ipcRenderer.invoke(IPC.VOICE_SAMPLE, voice),
+
+  // A line waits while Buildy's voice is still loading (the robot gets ready to speak).
+  onVoicePreparing: (handler: (preparing: boolean) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, preparing: boolean) => handler(preparing)
+    ipcRenderer.on(IPC.VOICE_PREPARING, listener)
+    return () => ipcRenderer.removeListener(IPC.VOICE_PREPARING, listener)
   },
 
   // Show the panel on Settings (the robot's "Open Settings").

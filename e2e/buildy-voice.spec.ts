@@ -48,7 +48,7 @@ test('Bella speaks a line, one sentence per clip, and the log says Kokoro spoke 
   })
   await m.app.evaluate((_e, text) => (globalThis as unknown as Record<string, { speak(t: string): void }>)['__mybuildyE2E'].speak(text), LINE)
 
-  await expect.poll(watchLog, { timeout: 60_000 }).toMatch(/voice-line engine=kokoro firstWordMs=\d+/)
+  await expect.poll(watchLog, { timeout: 60_000 }).toMatch(/voice-line engine=kokoro voice=bella firstWordMs=\d+/)
   const spoken = watchLog().split('\n').find((l) => l.includes('voice-line'))
   console.log(`[buildy-voice] ${spoken}`)
   // Two clips: "Claude Code just finished…" and "Two tests passed. Your next prompt…"
@@ -58,4 +58,36 @@ test('Bella speaks a line, one sentence per clip, and the log says Kokoro spoke 
     expect(Buffer.from(clip.src.split(',')[1] ?? '', 'base64').subarray(0, 4).toString('latin1')).toBe('RIFF') // WAV at Kokoro's own rate
     expect(clip.duration).toBeGreaterThan(1)
   }
+})
+
+test('Settings → Voice: Bella and Puck, each with Play sample; switching takes effect from the next line', async () => {
+  test.skip(IS_PACKAGED_RUN, 'Speaking on demand uses the dev-build test hook')
+  const page = m.main
+  await page.evaluate(async () => {
+    const api = (window as unknown as { mybuildy: { setup: { finish(): Promise<void> } } }).mybuildy
+    await api.setup.finish()
+  })
+  await page.reload()
+  await page.getByTitle('Settings').click()
+  const group = page.getByRole('radiogroup', { name: "Buildy's voice" })
+  await expect(group.getByRole('radio', { name: /Bella \(female\) — default/ })).toBeChecked()
+  await expect(group.getByRole('radio', { name: /Puck \(male\)/ })).not.toBeChecked()
+
+  await page.getByRole('button', { name: 'Play sample: Puck' }).click()
+  await expect.poll(watchLog, { timeout: 30_000 }).toMatch(/voice-sample voice=puck/)
+
+  await group.getByRole('radio', { name: /Puck \(male\)/ }).click()
+  await expect(group.getByRole('radio', { name: /Puck \(male\)/ })).toBeChecked()
+  await expect.poll(watchLog).toMatch(/voice-chosen voice=puck/)
+  const before = (watchLog().match(/voice-line/g) ?? []).length
+  await m.app.evaluate((_e, text) => (globalThis as unknown as Record<string, { speak(t: string): void }>)['__mybuildyE2E'].speak(text), 'Your next prompt is ready to paste.')
+  await expect.poll(() => (watchLog().match(/voice-line engine=kokoro voice=puck/g) ?? []).length, { timeout: 30_000 }).toBe(1)
+  expect((watchLog().match(/voice-line/g) ?? []).length).toBe(before + 1)
+
+  // Back to Bella: the next line is Bella's, no restart.
+  await group.getByRole('radio', { name: /Bella/ }).click()
+  await expect(group.getByRole('radio', { name: /Bella/ })).toBeChecked()
+  await m.app.evaluate((_e, text) => (globalThis as unknown as Record<string, { speak(t: string): void }>)['__mybuildyE2E'].speak(text), 'Two tests passed, and the page loads.')
+  await expect.poll(() => watchLog().trim().split(/\r?\n/).filter((l) => l.includes('voice-line')).at(-1) ?? '', { timeout: 30_000 })
+    .toMatch(/voice-line engine=kokoro voice=bella/)
 })
