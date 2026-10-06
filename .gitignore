@@ -31,3 +31,6 @@ test-results/
 
 # local claude settings
 .claude/settings.local.json
+
+# live provider test output (npm run test:live)
+live/last-results.md

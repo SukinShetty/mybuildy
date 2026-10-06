@@ -9,6 +9,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../renderer/src/types'
 import type { HandoffRef } from '../renderer/src/handoff'
 import type {
+  VisionCheckResult,
   WindowSource,
   CaptureResult,
   CaptureOutcome,
@@ -136,7 +137,7 @@ const mybuildyAPI = {
     ipcRenderer.invoke(IPC.GET_PROVIDER_INFOS),
 
   // ─── Connection test (= vision check with a red test image) ─────────────
-  testConnection: (settings: NonSecretSettings): Promise<{ success: boolean; message: string; latencyMs: number | null; visionPassed: boolean }> =>
+  testConnection: (settings: NonSecretSettings): Promise<VisionCheckResult> =>
     ipcRenderer.invoke(IPC.TEST_CONNECTION, settings),
 
   // ─── Live model lists (fetched in MAIN with the stored key, 10-min cache) ─

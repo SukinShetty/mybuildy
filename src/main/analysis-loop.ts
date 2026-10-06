@@ -45,6 +45,7 @@ import { getActiveProject } from './projects'
 import { sendGuidanceSendState, showGuidanceWindow } from './guidance-window'
 import { recordProviderCall, getCallsThisHour, isAtHourlyCap } from './cost-guard'
 import { mapProviderError, isAuthOrBillingError } from './ai/provider-errors'
+import { chatCompletionLimits } from './ai/request-shape'
 import { hasVisionPass } from './vision-approvals'
 import { enqueueSpeech } from './voice-player'
 import { RecentTopics } from './semantic-dedup'
@@ -671,7 +672,7 @@ async function callProviderForAnswer(
 
     body = {
       model: settings.modelId,
-      max_tokens: 800,
+      ...chatCompletionLimits(providerType, settings.modelId, 800),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userContent },

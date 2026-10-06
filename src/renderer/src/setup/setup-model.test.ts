@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  setupSteps, progressLabel, resumeStep, nextStep, previousStep, READY_GOALS, KEY_PROVIDERS,
+  setupSteps, progressLabel, resumeStep, nextStep, previousStep, READY_GOALS, KEY_PROVIDERS, ADVANCED_KEY_PROVIDERS,
   doneWhenText, agentInstructions, OWN_GOAL_EXAMPLE,
 } from './setup-model'
 
@@ -47,8 +47,9 @@ describe('ready-made goals', () => {
 
 describe('keys and commands', () => {
   it('every provider has a "Where do I get a key?" link', () => {
-    expect(KEY_PROVIDERS.map((p) => p.id)).toEqual(['anthropic', 'openai', 'gemini', 'openrouter'])
-    for (const p of KEY_PROVIDERS) expect(p.keyUrl).toMatch(/^https:\/\//)
+    expect(KEY_PROVIDERS.map((p) => p.id)).toEqual(['anthropic', 'openai', 'openrouter'])
+    expect(ADVANCED_KEY_PROVIDERS.map((p) => [p.id, p.notYetTested])).toEqual([['gemini', true]])
+    for (const p of [...KEY_PROVIDERS, ...ADVANCED_KEY_PROVIDERS]) expect(p.keyUrl).toMatch(/^https:\/\//)
   })
   it('Mac uses Terminal; Windows uses PowerShell (no &&, which Windows PowerShell 5.1 rejects)', () => {
     const mac = agentInstructions('darwin')

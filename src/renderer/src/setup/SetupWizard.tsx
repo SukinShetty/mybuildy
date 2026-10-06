@@ -12,11 +12,11 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   ModelChoice, NonSecretSettings, ProviderType, RedactedSettings, SecretName, SetupPermissionStatus, WindowSource,
 } from '../types'
-import { CAPTURE_NOTICE_MESSAGE, dataDestinationNote } from '../types'
+import { API_CREDITS_NOTE, CAPTURE_NOTICE_MESSAGE, PROVIDER_BILLING_URLS, dataDestinationNote, suggestsNextModel } from '../types'
 import { useAppStore } from '../store/useAppStore'
 import { WindowPicker } from '../components/WindowPicker'
 import {
-  type SetupStepId, KEY_PROVIDERS, READY_GOALS, OWN_GOAL_EXAMPLE, CLAUDE_CODE_INSTALL_URL,
+  type SetupStepId, type KeyProvider, KEY_PROVIDERS, ADVANCED_KEY_PROVIDERS, NOT_YET_TESTED_LABEL, READY_GOALS, OWN_GOAL_EXAMPLE, CLAUDE_CODE_INSTALL_URL,
   setupSteps, progressLabel, resumeStep, nextStep, previousStep, doneWhenText, agentInstructions,
 } from './setup-model'
 
@@ -160,11 +160,13 @@ function WelcomeStep({ onStart }: { onStart: () => void }): React.ReactElement {
 function KeyStep({ allow, onBeforeNext }: StepProps): React.ReactElement {
   const settings = useAppStore((s) => s.settings)
   const setSettings = useAppStore((s) => s.setSettings)
-  const current = KEY_PROVIDERS.find((p) => p.id === settings.provider) ?? null
+  const allProviders = [...KEY_PROVIDERS, ...ADVANCED_KEY_PROVIDERS]
+  const current = allProviders.find((p) => p.id === settings.provider) ?? null
   const [provider, setProvider] = useState<ProviderType | null>(current ? current.id : null)
   const [key, setKey] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(!!current?.notYetTested)
   const saved = !!provider && !!settings.secretFlags?.[SECRET_FOR[provider]]
-  const meta = KEY_PROVIDERS.find((p) => p.id === provider) ?? null
+  const meta = allProviders.find((p) => p.id === provider) ?? null
 
   useEffect(() => {
     allow(!!provider && (saved || key.trim().length >= 8))
@@ -178,6 +180,20 @@ function KeyStep({ allow, onBeforeNext }: StepProps): React.ReactElement {
     })
   }, [provider, key, saved, settings, allow, onBeforeNext, setSettings])
 
+  const card = (p: KeyProvider): React.ReactElement => (
+    <button
+      key={p.id}
+      type="button"
+      onClick={() => { setProvider(p.id); setKey('') }}
+      className={`setup-choice${provider === p.id ? ' is-on' : ''}`}
+      aria-pressed={provider === p.id}
+    >
+      <div style={S.choiceTitle}>{p.label}</div>
+      <div style={S.choiceSub}>{p.blurb}</div>
+      {p.notYetTested && <div style={S.untested}>{NOT_YET_TESTED_LABEL}</div>}
+    </button>
+  )
+
   return (
     <div>
       <h2 style={S.stepTitle}>Your AI key</h2>
@@ -185,20 +201,12 @@ function KeyStep({ allow, onBeforeNext }: StepProps): React.ReactElement {
         MyBuildy uses an AI service to understand your screen. Pick one and paste your key. It is saved encrypted on
         this computer and only ever sent to that service.
       </p>
-      <div style={S.cardGrid}>
-        {KEY_PROVIDERS.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            onClick={() => { setProvider(p.id); setKey('') }}
-            className={`setup-choice${provider === p.id ? ' is-on' : ''}`}
-            aria-pressed={provider === p.id}
-          >
-            <div style={S.choiceTitle}>{p.label}</div>
-            <div style={S.choiceSub}>{p.blurb}</div>
-          </button>
-        ))}
-      </div>
+      <p style={S.note} data-testid="credits-note">{API_CREDITS_NOTE}</p>
+      <div style={S.cardGrid}>{KEY_PROVIDERS.map(card)}</div>
+      <button type="button" className="btn-ghost" onClick={() => setShowAdvanced(!showAdvanced)} aria-expanded={showAdvanced}>
+        {showAdvanced ? 'Hide more providers' : 'Advanced: more providers'}
+      </button>
+      {showAdvanced && <div style={S.cardGrid}>{ADVANCED_KEY_PROVIDERS.map(card)}</div>}
       {meta && (
         <div style={S.panel}>
           {saved && !key ? (
@@ -228,6 +236,8 @@ function KeyStep({ allow, onBeforeNext }: StepProps): React.ReactElement {
 
 // ─── Your model ──────────────────────────────────────────────────────────────
 
+const CHECK_FAILED_MESSAGE = 'Something went wrong. Try again, or try the next recommended model.'
+
 function ModelStep({ allow, onBeforeNext }: StepProps): React.ReactElement {
   const settings = useAppStore((s) => s.settings)
   const setSettings = useAppStore((s) => s.setSettings)
@@ -235,22 +245,24 @@ function ModelStep({ allow, onBeforeNext }: StepProps): React.ReactElement {
   const [listError, setListError] = useState<string | null>(null)
   const [chosen, setChosen] = useState<string>(settings.modelId)
   const [checking, setChecking] = useState(false)
-  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [result, setResult] = useState<{ ok: boolean; message: string; errorKind: string | null } | null>(null)
+  const [tried, setTried] = useState<string[]>([])
   const [showAll, setShowAll] = useState(false)
   const started = useRef(false)
 
   const check = useCallback(async (modelId: string): Promise<void> => {
     setChosen(modelId)
+    setTried((t) => (t.includes(modelId) ? t : [...t, modelId]))
     setChecking(true)
     setResult(null)
     try {
       const s = useAppStore.getState().settings
       await window.mybuildy.saveSettings(nonSecretFrom(s, { modelId }))
       const r = await window.mybuildy.testConnection(nonSecretFrom(s, { modelId }))
-      setResult({ ok: r.visionPassed, message: r.visionPassed ? 'This model can see your screen.' : r.message })
+      setResult({ ok: r.visionPassed, message: r.visionPassed ? 'This model can see your screen.' : r.message, errorKind: r.errorKind })
       setSettings(await window.mybuildy.loadSettings())
-    } catch (e) {
-      setResult({ ok: false, message: String(e).replace(/^Error:\s*/, '') })
+    } catch {
+      setResult({ ok: false, message: CHECK_FAILED_MESSAGE, errorKind: 'unknown' })
     } finally {
       setChecking(false)
     }
@@ -265,7 +277,7 @@ function ModelStep({ allow, onBeforeNext }: StepProps): React.ReactElement {
       setModels(r.models)
       setListError(r.error)
       const already = settings.modelId && (await window.mybuildy.getVisionStatus(settings.provider, settings.modelId)).passed
-      if (already) { setResult({ ok: true, message: 'This model can see your screen.' }); return }
+      if (already) { setResult({ ok: true, message: 'This model can see your screen.', errorKind: null }); return }
       const suggested = r.models.find((m) => m.suggested)
       if (suggested) await check(suggested.id)
     })()
@@ -276,9 +288,12 @@ function ModelStep({ allow, onBeforeNext }: StepProps): React.ReactElement {
     onBeforeNext(null)
   }, [result, checking, allow, onBeforeNext])
 
-  const suggested = models?.filter((m) => m.suggested) ?? []
-  const others = models?.filter((m) => !m.suggested) ?? []
-  const visibleOthers = suggested.length === 0 || showAll ? others : []
+  // Curated models by default (3 to 6); everything else behind "Show all".
+  const curated = models?.filter((m) => m.curated) ?? []
+  const visible = curated.length === 0 || showAll ? (models ?? []) : curated
+  const nextRecommended = curated.find((m) => !tried.includes(m.id)) ?? null
+  const billingUrl = PROVIDER_BILLING_URLS[settings.provider]
+  const failed = !!result && !result.ok && !checking
 
   return (
     <div>
@@ -290,7 +305,7 @@ function ModelStep({ allow, onBeforeNext }: StepProps): React.ReactElement {
       {!models && !listError && <div style={S.small}>Loading the models your key can use…</div>}
       {listError && <div style={S.error}>{listError}</div>}
       <div style={S.list}>
-        {[...suggested, ...visibleOthers].map((m) => (
+        {visible.map((m) => (
           <button
             key={m.id}
             type="button"
@@ -305,15 +320,29 @@ function ModelStep({ allow, onBeforeNext }: StepProps): React.ReactElement {
           </button>
         ))}
       </div>
-      {suggested.length > 0 && others.length > 0 && (
+      {curated.length > 0 && (models?.length ?? 0) > curated.length && (
         <button type="button" className="btn-ghost" onClick={() => setShowAll(!showAll)}>
-          {showAll ? 'Show fewer' : `Show all ${others.length + suggested.length} models`}
+          {showAll ? 'Show recommended only' : `Show all ${models?.length ?? 0} models`}
         </button>
       )}
       {checking && <div style={S.small}>Checking that this model can see your screen…</div>}
       {result && (
         <div style={result.ok ? S.okLine : S.error} data-testid="model-check">
           {result.ok ? '✓ ' : ''}{result.message}
+        </div>
+      )}
+      {failed && (
+        <div style={S.actionRow}>
+          {result?.errorKind === 'billing' && billingUrl && (
+            <a href={billingUrl} target="_blank" rel="noreferrer" className="btn-primary" style={S.actionLink}>
+              Open the billing page
+            </a>
+          )}
+          {suggestsNextModel(result?.errorKind ?? null) && nextRecommended && (
+            <button type="button" className="btn-primary" onClick={() => void check(nextRecommended.id)}>
+              Try the next recommended model
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -700,6 +729,10 @@ const S = {
   link: { fontSize: 13, color: 'var(--color-accent)' },
   okLine: { fontSize: 13.5, color: 'var(--color-success)', margin: '8px 0' },
   error: { fontSize: 13, color: 'var(--color-danger)', margin: '10px 0', lineHeight: 1.5 },
+  note: { fontSize: 13, lineHeight: 1.5, color: 'var(--color-text)', background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '8px 12px', margin: '0 0 12px' },
+  untested: { fontSize: 11, fontWeight: 600, color: 'var(--color-text-muted)', marginTop: 4 },
+  actionRow: { display: 'flex', gap: 8, flexWrap: 'wrap' as const, marginTop: 4 },
+  actionLink: { textDecoration: 'none', display: 'inline-flex', alignItems: 'center' },
   steps: { fontSize: 14, lineHeight: 1.8, color: 'var(--color-text)', paddingLeft: 20, margin: '0 0 16px' },
   kbd: { fontFamily: 'var(--font-mono)', fontSize: 12, padding: '1px 6px', borderRadius: 4, border: '1px solid var(--color-border-strong)', background: 'var(--color-surface-2)' },
   copyBox: { display: 'flex', alignItems: 'center', gap: 8, margin: '6px 0 10px' },

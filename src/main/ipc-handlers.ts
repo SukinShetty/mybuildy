@@ -4,7 +4,7 @@
 
 import { app, ipcMain, clipboard, dialog, shell, systemPreferences, webContents } from 'electron'
 import { originOf, customKeyActionOnSave } from './provider-origins'
-import { providerHttpError, readJson } from './ai/provider-errors'
+import { providerHttpError, readJson, mapProviderError } from './ai/provider-errors'
 import { providerFetch, withCancellation, CancelledError } from './ai/fetch-with-timeout'
 import { guardedSender } from './project-guard'
 import { watchLogDir } from './watch-log'
@@ -192,7 +192,7 @@ export function registerIpcHandlers(
     } catch (error) {
       if (error instanceof CancelledError) return
       console.error('[IPC] BRAINSTORM_START error:', error)
-      getMainWindow().webContents.send(IPC.BRAINSTORM_ERROR, redactKnownSecrets(String(error)))
+      getMainWindow().webContents.send(IPC.BRAINSTORM_ERROR, mapProviderError(redactKnownSecrets(String(error))).message)
     }
   })
 
@@ -214,11 +214,12 @@ export function registerIpcHandlers(
       if (e2eFakes()) {
         // e2e only (e2e-fakes.ts): a local "pass" — no provider is called.
         recordVisionPass(settings.provider, settings.modelId, settings.apiKey)
-        return { success: true, message: 'Vision check passed — this model can see your screen. (1ms)', latencyMs: 1, visionPassed: true }
+        return { success: true, message: 'Vision check passed — this model can see your screen. (1ms)', latencyMs: 1, visionPassed: true, errorKind: null }
       }
       return await testProviderConnection(settings)
     } catch (error) {
-      return { success: false, message: redactKnownSecrets(String(error)), latencyMs: null, visionPassed: false }
+      const mapped = mapProviderError(redactKnownSecrets(String(error)))
+      return { success: false, message: mapped.message, latencyMs: null, visionPassed: false, errorKind: mapped.kind }
     }
   })
 
@@ -240,7 +241,7 @@ export function registerIpcHandlers(
       return await fetchModelsForProvider(settings)
     } catch (error) {
       console.error('[IPC] LIST_MODELS error:', error)
-      return { models: [], error: redactKnownSecrets(String(error)) }
+      return { models: [], error: mapProviderError(redactKnownSecrets(String(error))).message }
     }
   })
 
@@ -663,7 +664,7 @@ export function registerIpcHandlers(
     } catch (error) {
       if (error instanceof CancelledError) return { success: false, text: '', error: 'Stopped.' }
       console.error('[IPC] TRANSCRIBE_AUDIO error:', error)
-      return { success: false, text: '', error: redactKnownSecrets(String(error)) }
+      return { success: false, text: '', error: "Couldn't turn your voice into text. Try again, or type your question." }
     }
   })
 

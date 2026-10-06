@@ -7,11 +7,18 @@ import type { ModelChoice } from '../../renderer/src/types'
 
 // ─── OpenAI ──────────────────────────────────────────────────────────────────
 
-// Ids containing any of these are not chat/vision models — drop them.
+// Ids containing any of these are not vision chat models usable through
+// chat/completions (speech, image, embedding, audio, search, completion-only,
+// Responses-only "pro"/codex/deep-research models) — drop them.
 export const OPENAI_EXCLUDED_SUBSTRINGS = [
   'embedding', 'tts', 'whisper', 'transcribe', 'dall-e', 'image',
-  'moderation', 'audio', 'realtime',
+  'moderation', 'audio', 'realtime', 'live', 'translate', 'search',
+  'instruct', 'babbage', 'davinci', 'codex', 'sora', 'deep-research',
+  'computer-use',
 ] as const
+
+// Responses-only "pro" models and text-only legacy models (no image input).
+const OPENAI_EXCLUDED_PATTERNS = [/-pro(-|$)/, /^gpt-3\.5/, /^gpt-4(-\d{4})?$/, /^o3-mini/, /^o1-mini/]
 
 /** GET https://api.openai.com/v1/models → chat-capable models only. */
 export function filterOpenAIModels(json: unknown): ModelChoice[] {
@@ -23,6 +30,7 @@ export function filterOpenAIModels(json: unknown): ModelChoice[] {
     if (!id) continue
     const lower = id.toLowerCase()
     if (OPENAI_EXCLUDED_SUBSTRINGS.some((s) => lower.includes(s))) continue
+    if (OPENAI_EXCLUDED_PATTERNS.some((p) => p.test(lower))) continue
     out.push({ id, label: id })
   }
   return out
@@ -47,6 +55,7 @@ export function filterGeminiModels(json: unknown): ModelChoice[] {
     const id = name.replace(/^models\//, '')
     const lower = id.toLowerCase()
     if (lower.includes('embedding') || lower === 'aqa' || lower.includes('aqa-')) continue
+    if (/(image|tts|audio|live|lyria|veo|imagen)/.test(lower)) continue
     const methods = Array.isArray(entry.supportedGenerationMethods)
       ? (entry.supportedGenerationMethods as unknown[])
       : []
@@ -104,6 +113,9 @@ export function filterOpenRouterModels(json: unknown): ModelChoice[] {
       ? (entry.architecture!.input_modalities as unknown[])
       : []
     if (!modalities.includes('image')) continue
+    // Batch-only variants, image/music generators and safety classifiers are
+    // not chat models MyBuildy can use.
+    if (id.includes(':batch') || /(image|lyria|guard)/.test(id.toLowerCase())) continue
     const choice: ModelChoice = {
       id,
       label: typeof entry.name === 'string' && entry.name ? entry.name : id,

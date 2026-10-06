@@ -1,51 +1,61 @@
 // model-suggestions.test.ts
-// Rule-based "Suggested" tag: only ever applied to a model actually present in
-// the live list. Nothing is pre-selected — this is a tag, not a default.
+// Curated "Recommended" models: only ever applied to models actually present
+// in the live list; the Suggested model is always one of the curated ones.
 
 import { describe, it, expect } from 'vitest'
-import { pickSuggestedModelId, applySuggestedTag } from './model-suggestions'
+import { CURATED_MODELS, pickSuggestedModelId, applySuggestedTag } from './model-suggestions'
 import type { ModelChoice } from '../../renderer/src/types'
 
+const NOT_CHAT = /(tts|whisper|transcribe|embedding|image|audio|realtime|search|instruct|moderation|dall-e|sora|codex|lyria)/
+
+describe('CURATED_MODELS', () => {
+  it('lists 3 to 6 models for each cloud provider', () => {
+    for (const p of ['anthropic', 'openai', 'openrouter', 'gemini'] as const) {
+      const list = CURATED_MODELS[p] ?? []
+      expect(list.length, p).toBeGreaterThanOrEqual(3)
+      expect(list.length, p).toBeLessThanOrEqual(6)
+    }
+  })
+
+  it('never lists a speech, image, embedding, audio, search or completion-only model', () => {
+    for (const list of Object.values(CURATED_MODELS)) {
+      for (const id of list ?? []) expect(id, id).not.toMatch(NOT_CHAT)
+    }
+  })
+})
+
 describe('pickSuggestedModelId', () => {
-  it('anthropic: picks the newest Sonnet-class model from the live list', () => {
-    const ids = [
-      'claude-opus-4-1-20250805',
-      'claude-sonnet-4-20250514',
-      'claude-sonnet-4-5-20250929',
-      'claude-haiku-4-5-20251001',
-    ]
-    expect(pickSuggestedModelId('anthropic', ids)).toBe('claude-sonnet-4-5-20250929')
+  it('picks the best curated model present on the account', () => {
+    expect(pickSuggestedModelId('openai', ['gpt-4o', 'gpt-5.4-mini', 'gpt-6-luna', 'gpt-4o-mini-tts'])).toBe('gpt-6-luna')
+    expect(pickSuggestedModelId('openai', ['gpt-4o-mini', 'gpt-5.4-mini'])).toBe('gpt-5.4-mini')
   })
 
-  it('openai: picks the newest mini-class model', () => {
-    const ids = ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'o3']
-    expect(pickSuggestedModelId('openai', ids)).toBe('gpt-4.1-mini')
+  it('never suggests a model the curated list does not contain', () => {
+    expect(pickSuggestedModelId('openai', ['gpt-realtime-2.1-mini', 'gpt-4o-mini-tts', 'gpt-image-1-mini'])).toBeNull()
   })
 
-  it('gemini: picks the newest flash-class model', () => {
-    const ids = ['gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-2.5-flash']
-    expect(pickSuggestedModelId('gemini', ids)).toBe('gemini-2.5-flash')
-  })
-
-  it('returns null when no class candidate is present in the live list', () => {
-    expect(pickSuggestedModelId('anthropic', ['claude-opus-4-1-20250805'])).toBeNull()
-    expect(pickSuggestedModelId('openai', [])).toBeNull()
-  })
-
-  it('never suggests for providers without a rule (openrouter, local)', () => {
-    expect(pickSuggestedModelId('openrouter', ['anthropic/claude-sonnet-4'])).toBeNull()
+  it('returns null when nothing curated is present, or the provider has no list', () => {
+    expect(pickSuggestedModelId('anthropic', ['claude-instant-1'])).toBeNull()
     expect(pickSuggestedModelId('ollama', ['llava:latest'])).toBeNull()
   })
 })
 
 describe('applySuggestedTag', () => {
-  it('tags only the suggested model, leaving others untouched', () => {
+  it('puts curated models first in curated order, tags exactly one Suggested, keeps the rest behind', () => {
     const models: ModelChoice[] = [
-      { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+      { id: 'gpt-4o-mini-tts', label: 'tts' },
+      { id: 'gpt-5.4-mini', label: '5.4 mini' },
+      { id: 'gpt-6-luna', label: '6 luna' },
+      { id: 'gpt-5', label: '5' },
     ]
-    const tagged = applySuggestedTag('gemini', models)
-    expect(tagged.find((m) => m.id === 'gemini-2.5-flash')?.suggested).toBe(true)
-    expect(tagged.find((m) => m.id === 'gemini-2.5-pro')?.suggested).toBeUndefined()
+    const tagged = applySuggestedTag('openai', models)
+    expect(tagged.map((m) => m.id)).toEqual(['gpt-6-luna', 'gpt-5.4-mini', 'gpt-4o-mini-tts', 'gpt-5'])
+    expect(tagged.filter((m) => m.suggested).map((m) => m.id)).toEqual(['gpt-6-luna'])
+    expect(tagged.filter((m) => m.curated).map((m) => m.id)).toEqual(['gpt-6-luna', 'gpt-5.4-mini'])
+  })
+
+  it('leaves a list with nothing curated untouched', () => {
+    const models: ModelChoice[] = [{ id: 'llava', label: 'llava' }]
+    expect(applySuggestedTag('ollama', models)).toBe(models)
   })
 })

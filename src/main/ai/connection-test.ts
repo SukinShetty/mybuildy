@@ -11,7 +11,7 @@
 import type { AppSettings } from '../../renderer/src/types'
 import { CHOOSE_MODEL_MESSAGE } from '../../renderer/src/types'
 import { callTextCompletion } from './text-completion'
-import { mapProviderError, PROVIDER_ERROR_MESSAGES } from './provider-errors'
+import { mapProviderError, PROVIDER_ERROR_MESSAGES, type ProviderErrorKind } from './provider-errors'
 import { recordVisionPass, recordVisionFail } from '../vision-approvals'
 
 // 32x32 solid red PNG, constructed programmatically (scripts/one-off zlib PNG
@@ -29,6 +29,8 @@ export interface ConnectionTestResult {
   latencyMs: number | null
   /** True only when the model actually answered "red" for the test image. */
   visionPassed: boolean
+  /** Why the check failed (drives the billing / next-model buttons); null on a pass. */
+  errorKind: ProviderErrorKind | null
 }
 
 export async function testProviderConnection(
@@ -37,10 +39,10 @@ export async function testProviderConnection(
   const startTime = Date.now()
 
   if (!settings.modelId.trim()) {
-    return { success: false, message: CHOOSE_MODEL_MESSAGE, latencyMs: null, visionPassed: false }
+    return { success: false, message: CHOOSE_MODEL_MESSAGE, latencyMs: null, visionPassed: false, errorKind: null }
   }
   if (PROVIDERS_REQUIRING_KEY.has(settings.provider) && !settings.apiKey) {
-    return { success: false, message: CHOOSE_MODEL_MESSAGE, latencyMs: null, visionPassed: false }
+    return { success: false, message: CHOOSE_MODEL_MESSAGE, latencyMs: null, visionPassed: false, errorKind: null }
   }
 
   try {
@@ -61,6 +63,19 @@ export async function testProviderConnection(
         message: `Vision check passed — this model can see your screen. (${latency}ms)`,
         latencyMs: latency,
         visionPassed: true,
+        errorKind: null,
+      }
+    }
+
+    // No text at all is not proof the model is blind (a reasoning model can
+    // spend its budget thinking) — report it without recording a vision fail.
+    if (!answer.trim()) {
+      return {
+        success: false,
+        message: PROVIDER_ERROR_MESSAGES.emptyAnswer,
+        latencyMs: latency,
+        visionPassed: false,
+        errorKind: 'empty-answer',
       }
     }
 
@@ -71,6 +86,7 @@ export async function testProviderConnection(
       message: PROVIDER_ERROR_MESSAGES.cannotReadImages,
       latencyMs: latency,
       visionPassed: false,
+      errorKind: 'cannot-read-images',
     }
   } catch (error) {
     const latency = Date.now() - startTime
@@ -79,6 +95,6 @@ export async function testProviderConnection(
     if (mapped.kind === 'cannot-read-images') {
       recordVisionFail(settings.provider, settings.modelId)
     }
-    return { success: false, message: mapped.message, latencyMs: latency, visionPassed: false }
+    return { success: false, message: mapped.message, latencyMs: latency, visionPassed: false, errorKind: mapped.kind }
   }
 }

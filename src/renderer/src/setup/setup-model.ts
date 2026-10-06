@@ -47,14 +47,22 @@ export interface KeyProvider {
   blurb: string
   keyUrl: string       // "Where do I get a key?"
   placeholder: string
+  notYetTested?: boolean
 }
 
+// Recommended: tested end to end against the real APIs (npm run test:live).
 export const KEY_PROVIDERS: KeyProvider[] = [
   { id: 'anthropic', label: 'Anthropic', blurb: 'Makers of Claude', keyUrl: 'https://console.anthropic.com/settings/keys', placeholder: 'sk-ant-…' },
   { id: 'openai', label: 'OpenAI', blurb: 'Makers of ChatGPT', keyUrl: 'https://platform.openai.com/api-keys', placeholder: 'sk-…' },
-  { id: 'gemini', label: 'Google Gemini', blurb: 'Google’s AI', keyUrl: 'https://aistudio.google.com/app/apikey', placeholder: 'AIza…' },
   { id: 'openrouter', label: 'OpenRouter', blurb: 'One key, many AI models', keyUrl: 'https://openrouter.ai/keys', placeholder: 'sk-or-…' },
 ]
+
+// Advanced: works in code but not yet tested live, and labelled so.
+export const ADVANCED_KEY_PROVIDERS: KeyProvider[] = [
+  { id: 'gemini', label: 'Google Gemini', blurb: 'Google’s AI', keyUrl: 'https://aistudio.google.com/app/apikey', placeholder: 'AIza…', notYetTested: true },
+]
+
+export const NOT_YET_TESTED_LABEL = 'Not yet tested'
 
 // ─── What do you want to build? ──────────────────────────────────────────────
 

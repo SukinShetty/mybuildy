@@ -11,14 +11,7 @@ import type { AppSettings } from '../../renderer/src/types'
 import { providerHttpError, readJson } from './provider-errors'
 import { getProviderInfo } from './provider-registry'
 import { fetchWithTimeout } from './fetch-with-timeout'
-
-// OpenAI reasoning models use max_completion_tokens instead of max_tokens.
-const REASONING_MODEL_PREFIXES = ['o1', 'o3', 'o4']
-
-function isReasoningModel(modelId: string): boolean {
-  const baseId = modelId.includes('/') ? modelId.split('/').pop() ?? modelId : modelId
-  return REASONING_MODEL_PREFIXES.some((prefix) => baseId.startsWith(prefix))
-}
+import { chatCompletionLimits } from './request-shape'
 
 export interface TextCompletionRequest {
   system: string
@@ -125,12 +118,9 @@ export async function callTextCompletion(req: TextCompletionRequest): Promise<st
   }
   userContent.push({ type: 'text', text: user })
 
-  const tokenLimit = isReasoningModel(model)
-    ? { max_completion_tokens: maxTokens }
-    : { max_tokens: maxTokens }
   const body = {
     model,
-    ...tokenLimit,
+    ...chatCompletionLimits(provider, model, maxTokens),
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: userContent },

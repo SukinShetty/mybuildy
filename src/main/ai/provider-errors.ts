@@ -9,15 +9,24 @@ export type ProviderErrorKind =
   | 'model-not-found'     // 404
   | 'network'             // timeout / DNS / connection failures
   | 'cannot-read-images'  // model rejected the image input
+  | 'bad-request'         // 400 / 422 the model would not take (e.g. an unsupported parameter)
+  | 'server'              // 5xx on the provider's side
+  | 'empty-answer'        // 200, but the model returned no text
   | 'unknown'
 
+// Plain English with a next step. Raw provider text, HTTP codes and error
+// class names are NEVER shown to the user.
 export const PROVIDER_ERROR_MESSAGES = {
-  keyRejected: 'Your API key was rejected. Open Settings and check it.',
-  billing: 'No credits or a billing problem on your provider account. Check your provider billing page.',
-  rateLimited: 'Rate limited by the provider. Wait a minute and try again.',
-  modelNotFound: 'Model not found. Choose a different model in Settings.',
-  network: "Can't reach the provider. Check your internet connection.",
-  cannotReadImages: "This model can't see your screen. Pick one that passes the check.",
+  keyRejected: 'Your API key was rejected. Check it in Settings, or paste a new one.',
+  billing: "Your provider account has no credits left. Add credits on your provider's billing page, then try again.",
+  rateLimited: 'Your provider asked MyBuildy to slow down. Wait a minute and try again.',
+  modelNotFound: "This model isn't available on your account. Try the next recommended model.",
+  network: "Can't reach your AI provider. Check your internet connection and try again.",
+  cannotReadImages: "This model can't see your screen. Try the next recommended model.",
+  badRequest: "This model didn't accept MyBuildy's request. Try the next recommended model.",
+  server: 'Your AI provider is having trouble right now. Wait a minute and try again.',
+  emptyAnswer: "This model didn't send an answer. Try the next recommended model.",
+  unknown: 'Something went wrong talking to your AI provider. Try again, or try the next recommended model.',
 } as const
 
 export interface MappedProviderError {
@@ -39,6 +48,7 @@ function extractStatus(text: string): number | null {
 
 const BILLING_PHRASES = ['insufficient_quota', 'credit balance is too low', 'billing_not_active', 'payment required']
 const NETWORK_PHRASES = ['timed out', 'timeout', 'fetch failed', 'econnrefused', 'enotfound', 'econnreset', 'eai_again', 'network error', 'aborterror']
+const EMPTY_ANSWER_PHRASES = ['returned no text content', 'no response body', 'could not read (']
 const IMAGE_PHRASES = [
   'does not support image', "doesn't support image", 'image input', 'invalid_image',
   'unsupported image', 'image_url is not supported', 'no images', 'not multimodal', 'vision is not supported',
@@ -85,8 +95,16 @@ export function mapProviderError(errorText: string, status?: number | null): Map
   if (NETWORK_PHRASES.some((p) => lower.includes(p))) {
     return { kind: 'network', message: PROVIDER_ERROR_MESSAGES.network }
   }
-  const trimmed = text.replace(/^Error:\s*/, '').slice(0, 160)
-  return { kind: 'unknown', message: `Provider error: ${trimmed || 'something went wrong.'}` }
+  if (code === 400 || code === 422) {
+    return { kind: 'bad-request', message: PROVIDER_ERROR_MESSAGES.badRequest }
+  }
+  if (code !== null && code >= 500) {
+    return { kind: 'server', message: PROVIDER_ERROR_MESSAGES.server }
+  }
+  if (EMPTY_ANSWER_PHRASES.some((p) => lower.includes(p))) {
+    return { kind: 'empty-answer', message: PROVIDER_ERROR_MESSAGES.emptyAnswer }
+  }
+  return { kind: 'unknown', message: PROVIDER_ERROR_MESSAGES.unknown }
 }
 
 const MESSAGE_FOR_KIND: Partial<Record<ProviderErrorKind, string>> = {
@@ -96,6 +114,9 @@ const MESSAGE_FOR_KIND: Partial<Record<ProviderErrorKind, string>> = {
   'model-not-found': PROVIDER_ERROR_MESSAGES.modelNotFound,
   network: PROVIDER_ERROR_MESSAGES.network,
   'cannot-read-images': PROVIDER_ERROR_MESSAGES.cannotReadImages,
+  'bad-request': PROVIDER_ERROR_MESSAGES.badRequest,
+  server: PROVIDER_ERROR_MESSAGES.server,
+  'empty-answer': PROVIDER_ERROR_MESSAGES.emptyAnswer,
 }
 
 // ─── Safe HTTP errors ────────────────────────────────────────────────────────

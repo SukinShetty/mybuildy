@@ -4,7 +4,7 @@
 import type { WebContents } from 'electron'
 import { redactKnownSecrets } from '../../secure-store'
 import { providerFetch } from '../fetch-with-timeout'
-import { providerHttpError, readJson } from '../provider-errors'
+import { providerHttpError, readJson, mapProviderError } from '../provider-errors'
 import type {
   ProjectMemory,
   CaptureResult,
@@ -139,7 +139,7 @@ export class GeminiProvider implements AIProvider {
       }
     } catch (error) {
       if (!senderWebContents.isDestroyed()) {
-        senderWebContents.send(IPC.BRAINSTORM_ERROR, redactKnownSecrets(String(error)))
+        senderWebContents.send(IPC.BRAINSTORM_ERROR, mapProviderError(redactKnownSecrets(String(error))).message)
       }
     }
   }

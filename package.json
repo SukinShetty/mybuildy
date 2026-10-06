@@ -18,6 +18,7 @@
     "package": "npm run build && electron-builder",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p e2e/tsconfig.json",
     "test": "vitest run",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "test:e2e": "npm run build && playwright test",
     "test:e2e:packaged": "node scripts/e2e-packaged.mjs"
   },

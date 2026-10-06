@@ -1,8 +1,10 @@
 // SettingsScreen.tsx
 // Provider + model configuration.
-//   - Four "Recommended" providers (Anthropic, OpenAI, Google Gemini, OpenRouter)
-//     and a collapsed "Advanced: run models locally" section (Ollama, LM Studio,
-//     Custom endpoint).
+//   - Three "Recommended" providers (Anthropic, OpenAI, OpenRouter) and a
+//     collapsed "Advanced" section: Google Gemini (labelled "Not yet tested")
+//     and local models (Ollama, LM Studio, Custom endpoint).
+//   - The model list shows the curated, live-tested models by default; the rest
+//     of the account's list sits behind "Show all".
 //   - NO hardcoded model catalog and NO default model: the model list is fetched
 //     LIVE in the main process with the stored key; nothing is pre-selected.
 //   - Key inputs are write-only: after save you see "Saved" + Replace/Remove —
@@ -14,7 +16,10 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { RobotSizeSetting } from '../components/RobotSizeSetting'
 import type { ProviderType, NonSecretSettings, SecretName, ModelChoice } from '../types'
-import { HOURLY_CALL_CAP_MIN, HOURLY_CALL_CAP_MAX, NO_SECURE_STORAGE_MESSAGE, dataDestinationNote } from '../types'
+import {
+  HOURLY_CALL_CAP_MIN, HOURLY_CALL_CAP_MAX, NO_SECURE_STORAGE_MESSAGE, API_CREDITS_NOTE, PROVIDER_BILLING_URLS,
+  dataDestinationNote, suggestsNextModel,
+} from '../types'
 import { DEFAULT_VOICE_ID, ELEVENLABS_VOICES, voiceLabel } from '../voice-options'
 
 // IPC errors arrive wrapped ("Error invoking remote method ...: Error: <msg>").
@@ -22,8 +27,11 @@ import { DEFAULT_VOICE_ID, ELEVENLABS_VOICES, voiceLabel } from '../voice-option
 function friendlySaveError(error: unknown): string {
   const text = String(error)
   if (text.includes(NO_SECURE_STORAGE_MESSAGE)) return NO_SECURE_STORAGE_MESSAGE
-  return text
+  return "Couldn't save your settings. Try again, or restart MyBuildy."
 }
+
+const CHECK_FAILED_MESSAGE = 'Something went wrong. Try again, or try the next recommended model.'
+const MODEL_LIST_FAILED_MESSAGE = "Couldn't load the model list. Check your key and internet connection, then Refresh."
 
 
 // Which encrypted secret holds the API key for a provider (local providers: none).
@@ -49,6 +57,7 @@ interface ProviderMeta {
   needsBaseUrl: boolean
   defaultBaseUrl: string
   keyHint?: string
+  notYetTested?: boolean     // works in code, not yet tested against the live API
 }
 
 const RECOMMENDED_PROVIDERS: ProviderMeta[] = [
@@ -65,12 +74,6 @@ const RECOMMENDED_PROVIDERS: ProviderMeta[] = [
     keyHint: 'Get yours at platform.openai.com.',
   },
   {
-    type: 'gemini', displayName: 'Google Gemini',
-    description: 'Gemini models via the Google AI API.',
-    needsApiKey: true, needsBaseUrl: false, defaultBaseUrl: '',
-    keyHint: 'Get yours at aistudio.google.com.',
-  },
-  {
     type: 'openrouter', displayName: 'OpenRouter',
     description: 'Open-source and other models, one key.',
     needsApiKey: true, needsBaseUrl: false, defaultBaseUrl: '',
@@ -79,6 +82,13 @@ const RECOMMENDED_PROVIDERS: ProviderMeta[] = [
 ]
 
 const ADVANCED_PROVIDERS: ProviderMeta[] = [
+  {
+    type: 'gemini', displayName: 'Google Gemini',
+    description: 'Gemini models via the Google AI API.',
+    needsApiKey: true, needsBaseUrl: false, defaultBaseUrl: '',
+    keyHint: 'Get yours at aistudio.google.com.',
+    notYetTested: true,
+  },
   {
     type: 'ollama', displayName: 'Ollama',
     description: 'Local models via Ollama. Free, runs on this computer.',
@@ -135,12 +145,14 @@ export function SettingsScreen(): React.ReactElement {
   const [hourlyCallCap, setHourlyCallCap] = useState(settings.hourlyCallCap)
   const [savedAt, setSavedAt] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [showAdvanced, setShowAdvanced] = useState(isLocalProvider(settings.provider))
+  const [showAdvanced, setShowAdvanced] = useState(isLocalProvider(settings.provider) || getProviderMeta(settings.provider).notYetTested === true)
+  const [showAllModels, setShowAllModels] = useState(false)
+  const [triedModels, setTriedModels] = useState<string[]>([])
   const [models, setModels] = useState<ModelChoice[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
   const [modelsError, setModelsError] = useState<string | null>(null)
   const [visionPassed, setVisionPassed] = useState<boolean | null>(null)
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string; errorKind: string | null } | null>(null)
   const [isTesting, setIsTesting] = useState(false)
   // Delete-all-data flow (privacy): confirm → wipe in main → app restarts.
   const [confirmWipe, setConfirmWipe] = useState(false)
@@ -177,7 +189,7 @@ export function SettingsScreen(): React.ReactElement {
     } catch (error) {
       if (seq !== fetchSeq.current) return
       setModels([])
-      setModelsError(String(error))
+      setModelsError(MODEL_LIST_FAILED_MESSAGE)
     } finally {
       if (seq === fetchSeq.current) setModelsLoading(false)
     }
@@ -283,10 +295,15 @@ export function SettingsScreen(): React.ReactElement {
     try {
       await persistAll(overrides) // the check runs in main with the STORED key
       const result = await window.mybuildy.testConnection(buildNonSecret(overrides))
-      setTestResult({ success: result.success, message: result.message })
+      setTestResult({ success: result.success, message: result.message, errorKind: result.errorKind })
       setVisionPassed(result.visionPassed)
     } catch (error) {
-      setTestResult({ success: false, message: friendlySaveError(error) })
+      const text = String(error)
+      setTestResult({
+        success: false,
+        message: text.includes(NO_SECURE_STORAGE_MESSAGE) ? NO_SECURE_STORAGE_MESSAGE : CHECK_FAILED_MESSAGE,
+        errorKind: 'unknown',
+      })
     } finally {
       setIsTesting(false)
     }
@@ -309,6 +326,7 @@ export function SettingsScreen(): React.ReactElement {
 
   // Selecting a model saves it and automatically runs the vision check.
   async function selectModel(id: string): Promise<void> {
+    setTriedModels((t) => (t.includes(id) ? t : [...t, id]))
     setModelId(id)
     setTypedModelId('')
     await runVisionCheck({ modelId: id })
@@ -325,6 +343,8 @@ export function SettingsScreen(): React.ReactElement {
     setTestResult(null)
     setVisionPassed(null)
     setModels([])
+    setShowAllModels(false)
+    setTriedModels([])
   }
 
   // ─── Validation ──────────────────────────────────────────────────────────
@@ -337,9 +357,15 @@ export function SettingsScreen(): React.ReactElement {
   const showKeyField = meta.needsApiKey || meta.optionalApiKey
   const showTypedModelInput = isLocalProvider(provider)
 
+  // Curated (live-tested) models by default; the rest behind "Show all".
+  const curatedModels = models.filter((m) => m.curated)
+  const shownModels = curatedModels.length === 0 || showAllModels ? models : curatedModels
+  const nextRecommended = curatedModels.find((m) => !triedModels.includes(m.id)) ?? null
+  const billingUrl = PROVIDER_BILLING_URLS[provider]
+
   // Group the model list (OpenRouter groups; others come back ungrouped).
   const groupNames: string[] = []
-  for (const m of models) {
+  for (const m of shownModels) {
     const g = m.group ?? ''
     if (!groupNames.includes(g)) groupNames.push(g)
   }
@@ -366,12 +392,12 @@ export function SettingsScreen(): React.ReactElement {
         <div style={styles.section}>
           <button style={styles.advancedToggle} onClick={() => setShowAdvanced(!showAdvanced)}>
             <span style={{ display: 'inline-block', transform: showAdvanced ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▸</span>
-            {' '}Advanced: run models locally
+            {' '}Advanced: more providers and local models
           </button>
           {showAdvanced && (
             <div style={styles.providerGrid}>
               {ADVANCED_PROVIDERS.map((p) => (
-                <ProviderCard key={p.type} meta={p} active={provider === p.type} onClick={() => handleProviderChange(p.type)} local />
+                <ProviderCard key={p.type} meta={p} active={provider === p.type} onClick={() => handleProviderChange(p.type)} local={isLocalProvider(p.type)} />
               ))}
             </div>
           )}
@@ -384,6 +410,7 @@ export function SettingsScreen(): React.ReactElement {
               API Key{meta.optionalApiKey ? ' (optional)' : ''}
             </div>
             {meta.keyHint && <div style={styles.sectionHint}>{meta.keyHint}</div>}
+            {meta.needsApiKey && <div style={styles.creditsNote} data-testid="credits-note">{API_CREDITS_NOTE}</div>}
             {keySaved && !replacingKey ? (
               <div style={styles.keySavedRow}>
                 <span style={styles.keySavedBadge}>Saved</span>
@@ -470,7 +497,7 @@ export function SettingsScreen(): React.ReactElement {
               {groupNames.map((group) => (
                 <React.Fragment key={group || 'ungrouped'}>
                   {group && <div style={styles.groupLabel}>{group}</div>}
-                  {models.filter((m) => (m.group ?? '') === group).map((m) => {
+                  {shownModels.filter((m) => (m.group ?? '') === group).map((m) => {
                     const inPrice = formatPrice(m.promptPricePerM)
                     const outPrice = formatPrice(m.completionPricePerM)
                     const active = modelId === m.id && !typedModelId.trim()
@@ -510,6 +537,11 @@ export function SettingsScreen(): React.ReactElement {
                 </React.Fragment>
               ))}
             </div>
+          )}
+          {curatedModels.length > 0 && models.length > curatedModels.length && (
+            <button className="btn-icon" style={{ alignSelf: 'flex-start' }} onClick={() => setShowAllModels(!showAllModels)}>
+              {showAllModels ? 'Show recommended only' : `Show all ${models.length} models`}
+            </button>
           )}
           {/* Free-typed model name for local/custom servers whose list may be incomplete */}
           {showTypedModelInput && (
@@ -645,6 +677,20 @@ export function SettingsScreen(): React.ReactElement {
             <span style={styles.statusText}>{testResult.message}</span>
           </div>
         )}
+        {testResult && !testResult.success && !isTesting && (
+          <div style={styles.saveRow}>
+            {testResult.errorKind === 'billing' && billingUrl && (
+              <a href={billingUrl} target="_blank" rel="noreferrer" className="btn-primary" style={{ flex: 1, justifyContent: 'center', textDecoration: 'none' }}>
+                Open the billing page
+              </a>
+            )}
+            {suggestsNextModel(testResult.errorKind) && nextRecommended && (
+              <button className="btn-primary" style={{ flex: 1, justifyContent: 'center' }} onClick={() => void selectModel(nextRecommended.id)}>
+                Try the next recommended model
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Info */}
         <div style={styles.infoSection}>
@@ -775,6 +821,7 @@ function ProviderCard({
       <div style={styles.providerCardTitle}>{meta.displayName}</div>
       <div style={styles.providerCardDesc}>{meta.description}</div>
       {local && <div style={styles.localBadge}>Local</div>}
+      {meta.notYetTested && <div style={styles.localBadge}>Not yet tested</div>}
     </button>
   )
 }
@@ -827,6 +874,15 @@ const styles = {
     fontSize: 12,
     color: 'var(--color-text-dim)',
     lineHeight: 1.4,
+  },
+  creditsNote: {
+    fontSize: 12,
+    lineHeight: 1.5,
+    color: 'var(--color-text)',
+    background: 'var(--color-surface)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 6,
+    padding: '6px 10px',
   },
   advancedToggle: {
     background: 'transparent',

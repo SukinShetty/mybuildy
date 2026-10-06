@@ -55,7 +55,7 @@ export function e2eFakes(): E2eFakes | null {
 
 export const FAKE_MODELS: ModelChoice[] = [
   { id: 'fake-large', label: 'Fake Large' },
-  { id: 'fake-mini', label: 'Fake Mini', suggested: true },
+  { id: 'fake-mini', label: 'Fake Mini', suggested: true, curated: true },
 ]
 
 /** A canned analysis for a watch started during the e2e wizard run. */

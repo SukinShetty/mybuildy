@@ -11,6 +11,7 @@ vi.mock('electron', () => ({
 import { defaultSettings, emptyProjectMemory, type AppSettings } from '../../renderer/src/types'
 import { fetchModelsForProvider } from './model-fetch'
 import { getProvider } from './provider-registry'
+import { PROVIDER_ERROR_MESSAGES } from './provider-errors'
 
 const FAKE_KEY = 'sk-proj-LEAKTESTLEAKTESTLEAKTEST0123456789'
 const echo = JSON.stringify({ error: { message: `Incorrect API key provided: ${FAKE_KEY}`, type: 'invalid_request_error' } })
@@ -44,7 +45,7 @@ describe('a key echoed in a provider error body never leaks', () => {
   it('model list (IPC payload to Settings)', async () => {
     const result = await fetchModelsForProvider(settings())
     expect(JSON.stringify(result)).not.toContain(FAKE_KEY)
-    expect(result.error).toBe('Your API key was rejected. Open Settings and check it.')
+    expect(result.error).toBe(PROVIDER_ERROR_MESSAGES.keyRejected)
     expect(logged.join('\n')).not.toContain(FAKE_KEY)
   })
 

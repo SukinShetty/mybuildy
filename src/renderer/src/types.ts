@@ -214,6 +214,34 @@ export function isModelConfigured(
 
 export const CHOOSE_MODEL_MESSAGE = 'Choose a model in Settings'
 
+/** Result of the setup check (a red test image the model must name). */
+export interface VisionCheckResult {
+  success: boolean
+  message: string            // plain English — never raw provider text
+  latencyMs: number | null
+  visionPassed: boolean
+  /** Why it failed (e.g. 'billing', 'bad-request'); null on a pass. */
+  errorKind: string | null
+}
+
+/** Where each cloud provider's credits are topped up (the billing button). */
+export const PROVIDER_BILLING_URLS: Partial<Record<ProviderType, string>> = {
+  anthropic: 'https://console.anthropic.com/settings/billing',
+  openai: 'https://platform.openai.com/settings/organization/billing/overview',
+  openrouter: 'https://openrouter.ai/settings/credits',
+  gemini: 'https://aistudio.google.com/app/billing',
+}
+
+/** Shown on the AI key step: subscriptions are not API credits. */
+export const API_CREDITS_NOTE =
+  "Your key needs credits on your provider's account. ChatGPT Plus and Claude Pro subscriptions don't include these."
+
+/** Failures where trying the next curated model is the sensible next step. */
+export function suggestsNextModel(errorKind: string | null): boolean {
+  return errorKind === 'bad-request' || errorKind === 'model-not-found' || errorKind === 'cannot-read-images'
+    || errorKind === 'empty-answer' || errorKind === 'unknown'
+}
+
 // Shown when the OS offers no encrypted key storage (safeStorage unavailable).
 // MyBuildy REFUSES to write keys in plain text — saving fails with this message.
 export const NO_SECURE_STORAGE_MESSAGE =
@@ -333,6 +361,7 @@ export interface ModelChoice {
   promptPricePerM?: number | null  // $ per million input tokens (when the provider reports it)
   completionPricePerM?: number | null
   suggested?: boolean              // rule-based tag; only ever set on a live-listed model
+  curated?: boolean                // hand-picked vision chat model, shown by default (see model-suggestions.ts)
 }
 
 export interface ModelListResult {

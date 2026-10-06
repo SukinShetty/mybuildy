@@ -5,7 +5,7 @@
 import type { WebContents } from 'electron'
 import { redactKnownSecrets } from '../../secure-store'
 import { providerFetch } from '../fetch-with-timeout'
-import { providerHttpError, readJson } from '../provider-errors'
+import { providerHttpError, readJson, mapProviderError } from '../provider-errors'
 import type {
   ProjectMemory,
   CaptureResult,
@@ -18,6 +18,7 @@ import type { AIProvider, ProviderInfo } from '../provider-interface'
 import { buildAnalysisSystemPrompt, buildAnalysisUserPrompt, buildBrainstormSystemPrompt } from '../prompt-builder'
 import { parseAnalysisResponse, tryExtractProjectData } from '../response-parser'
 import { fetchWithTimeout } from '../fetch-with-timeout'
+import { chatCompletionLimits } from '../request-shape'
 
 // ─── Provider info definitions ───────────────────────────────────────────────
 
@@ -61,20 +62,6 @@ export const customProviderInfo: ProviderInfo = {
   supportsStreaming: true,
 }
 
-// OpenAI reasoning models use max_completion_tokens instead of max_tokens.
-const REASONING_MODEL_PREFIXES = ['o1', 'o3', 'o4']
-
-function isReasoningModel(modelId: string): boolean {
-  const baseId = modelId.includes('/') ? modelId.split('/').pop() ?? modelId : modelId
-  return REASONING_MODEL_PREFIXES.some((prefix) => baseId.startsWith(prefix))
-}
-
-function buildTokenLimit(modelId: string, tokens: number): Record<string, number> {
-  return isReasoningModel(modelId)
-    ? { max_completion_tokens: tokens }
-    : { max_tokens: tokens }
-}
-
 // ─── Shared implementation ───────────────────────────────────────────────────
 
 export class OpenAICompatibleProvider implements AIProvider {
@@ -110,7 +97,7 @@ export class OpenAICompatibleProvider implements AIProvider {
 
     const requestBody = {
       model: settings.modelId,
-      ...buildTokenLimit(settings.modelId, 1500),
+      ...chatCompletionLimits(this.info.type, settings.modelId, 1500),
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userContent },
@@ -136,7 +123,7 @@ export class OpenAICompatibleProvider implements AIProvider {
 
     const requestBody = {
       model: settings.modelId,
-      ...buildTokenLimit(settings.modelId, 1000),
+      ...chatCompletionLimits(this.info.type, settings.modelId, 1000),
       stream: true,
       messages,
     }
@@ -197,7 +184,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       }
     } catch (error) {
       if (!senderWebContents.isDestroyed()) {
-        senderWebContents.send(IPC.BRAINSTORM_ERROR, redactKnownSecrets(String(error)))
+        senderWebContents.send(IPC.BRAINSTORM_ERROR, mapProviderError(redactKnownSecrets(String(error))).message)
       }
     }
   }
