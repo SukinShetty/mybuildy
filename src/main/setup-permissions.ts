@@ -18,7 +18,8 @@
 // e2e: with MYBUILDY_E2E=1 in a dev build, e2e-fakes.ts can stand in for the
 // platform and these permissions, so both platforms' steps are testable.
 
-import { app, desktopCapturer, shell, systemPreferences } from 'electron'
+import { app, shell, systemPreferences } from 'electron'
+import { getCaptureSources } from './capture-sources'
 import { execFile } from 'child_process'
 import { permissionSettingsUrl } from './mac-permissions-core'
 import { e2eFakes, isE2eDevRun } from './e2e-fakes'
@@ -58,7 +59,7 @@ export function getSetupPermissions(): SetupPermissions {
 export async function registerForScreenRecording(): Promise<void> {
   if (e2eFakes() || process.platform !== 'darwin') return
   try {
-    await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } })
+    await getCaptureSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } })
   } catch {
     // The prompt, not the capture, is the point.
   }

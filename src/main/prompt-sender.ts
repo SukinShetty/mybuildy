@@ -13,7 +13,8 @@
 // Serialized: one send at a time. A second send while one is in flight is
 // rejected (not queued) by the caller via isSendInFlight().
 
-import { clipboard, desktopCapturer, systemPreferences } from 'electron'
+import { clipboard, systemPreferences } from 'electron'
+import { getCaptureSources } from './capture-sources'
 import { spawn } from 'child_process'
 import type { SendPromptResult } from '../renderer/src/types'
 import { performSend, type SendCommand, type SendExit, type SendTarget } from './prompt-sender-core'
@@ -42,7 +43,7 @@ export function isSendInFlight(): boolean {
 export async function isWatchedWindowPresent(watchedId: string | null): Promise<boolean> {
   if (!watchedId) return false
   try {
-    const sources = await desktopCapturer.getSources({
+    const sources = await getCaptureSources({
       types: ['window'],
       thumbnailSize: { width: 0, height: 0 },
       fetchWindowIcons: false,

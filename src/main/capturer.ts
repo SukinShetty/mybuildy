@@ -9,7 +9,7 @@
 // The picker thumbnails are deliberately LOW-RESOLUTION (so other apps aren't
 // captured in high fidelity); only the SELECTED window is captured full-res.
 
-import { desktopCapturer } from 'electron'
+import { getCaptureSources } from './capture-sources'
 import type { WindowSource, CaptureResult } from '../renderer/src/types'
 import { findWatchedSource } from './capture-guard'
 import { pickableWindows } from './window-list'
@@ -35,7 +35,7 @@ const POLL_QUALITY = 50
  * is cheap enough to run every 2 s for the watch-continuity poll.
  */
 export async function listLiveWindowSources(): Promise<{ id: string; name: string }[]> {
-  const sources = await desktopCapturer.getSources({
+  const sources = await getCaptureSources({
     types: ['window'],
     thumbnailSize: { width: 0, height: 0 },
     fetchWindowIcons: false,
@@ -53,7 +53,7 @@ export async function listLiveWindowSources(): Promise<{ id: string; name: strin
  */
 export async function listOpenWindows(ownIds: ReadonlySet<string>): Promise<WindowSource[]> {
   const [sources, flags] = await Promise.all([
-    desktopCapturer.getSources({
+    getCaptureSources({
       types: ['window'],
       thumbnailSize: THUMB_SIZE,
       fetchWindowIcons: false,
@@ -84,7 +84,7 @@ export async function captureWatchedWindow(
   sourceId: string,
   _expectedName: string | null
 ): Promise<CaptureResult | null> {
-  const sources = await desktopCapturer.getSources({
+  const sources = await getCaptureSources({
     types: ['window'],
     thumbnailSize: CAPTURE_SIZE,
     fetchWindowIcons: false,
@@ -110,7 +110,7 @@ export async function captureWatchedWindow(
  * captureWatchedWindow: never another window, never the full screen.
  */
 export async function capturePollThumbnail(sourceId: string): Promise<string | null> {
-  const sources = await desktopCapturer.getSources({
+  const sources = await getCaptureSources({
     types: ['window'],
     thumbnailSize: POLL_SIZE,
     fetchWindowIcons: false,
@@ -126,7 +126,7 @@ export async function capturePollThumbnail(sourceId: string): Promise<string | n
  * with nothing in them instead of an error. 'missing' = not in the live list.
  */
 export async function probeWatchedWindowFrame(sourceId: string): Promise<'ok' | 'blank' | 'missing'> {
-  const sources = await desktopCapturer.getSources({
+  const sources = await getCaptureSources({
     types: ['window'],
     thumbnailSize: THUMB_SIZE,
     fetchWindowIcons: false,
