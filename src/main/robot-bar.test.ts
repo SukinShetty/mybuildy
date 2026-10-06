@@ -35,7 +35,8 @@ import {
 import { loadRobotScale, saveRobotScale } from './robot-prefs'
 import { ROBOT_SHORTCUT, robotShortcutLabel, registerRobotShortcut, pressRobotShortcut } from './robot-shortcut'
 import { createShutdown, type ShutdownSteps } from './app-shutdown'
-import { hideRobot, showRobot, isRobotHidden, noteAnalysisForRobot, hiddenAlertFor } from './robot-visibility'
+import { hideRobot, showRobot, isRobotHidden, noteAnalysisForRobot, hiddenAlertFor, robotWindowMinimized, robotWindowRestored } from './robot-visibility'
+import { robotHiddenMessage, hideButtonTitle } from '../renderer/src/robot-hidden'
 
 const dir = mkdtempSync(join(tmpdir(), 'mybuildy-robot-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
@@ -123,10 +124,11 @@ describe('hidden robot', () => {
   it('alerts: blocked, and the agent asking a question; the notification says how to bring the robot back', () => {
     const blocked = hiddenAlertFor(analysis({ goalAlignment: 'blocked' }), analysis(), 'win32')
     expect(blocked?.title).toMatch(/stuck/)
-    expect(blocked?.body).toContain('Ctrl+Alt+B')
+    expect(blocked?.body).toContain('Click MyBuildy in your taskbar to see it.')
+    expect(blocked?.body).not.toContain('Ctrl+Alt+B') // the shortcut is never the way we offer
     const asking = hiddenAlertFor(analysis({ terminalState: 'permission_prompt' }), analysis(), 'darwin')
     expect(asking?.title).toMatch(/asking you something/)
-    expect(asking?.body).toContain('Cmd+Option+B')
+    expect(asking?.body).toContain('Click MyBuildy in your Dock to see it.')
     expect(hiddenAlertFor(analysis(), analysis(), 'win32')).toBeNull()
   })
 })
@@ -199,5 +201,28 @@ describe('Quit shuts everything down', () => {
     expect(s.order).toContain('destroyMainWindow')
     expect(s.order).toContain('releaseShortcuts')
     warn.mockRestore()
+  })
+})
+
+describe('bringing the hidden robot back, without a shortcut', () => {
+  it('Hide says how: the taskbar on Windows, the Dock on Mac', () => {
+    expect(robotHiddenMessage('win32')).toBe('Buildy is hidden. Click MyBuildy in your taskbar to bring him back.')
+    expect(robotHiddenMessage('darwin')).toBe('Buildy is hidden. Click MyBuildy in your Dock to bring him back.')
+    expect(hideButtonTitle('win32')).toMatch(/^Hide the robot \(keeps watching\)\. Bring him back: click MyBuildy in your taskbar$/)
+    expect(hideButtonTitle('darwin')).not.toMatch(/Cmd|Ctrl/)
+  })
+  it('the taskbar button: minimizing the robot hides it (panel too), restoring brings it back', () => {
+    if (isRobotHidden()) showRobot()
+    h.suppressed.length = 0
+    robotWindowMinimized()
+    expect(isRobotHidden()).toBe(true)
+    expect(h.suppressed).toEqual([true])
+    robotWindowMinimized() // Hide itself minimizes: no second hide
+    expect(h.suppressed).toEqual([true])
+    robotWindowRestored()
+    expect(isRobotHidden()).toBe(false)
+    expect(h.suppressed).toEqual([true, false])
+    robotWindowRestored() // a restore while showing changes nothing
+    expect(h.suppressed).toEqual([true, false])
   })
 })

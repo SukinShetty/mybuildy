@@ -12,7 +12,7 @@ import { app, BrowserWindow, Tray, Menu, nativeImage, shell, globalShortcut } fr
 import { join } from 'path'
 import { IPC } from '../renderer/src/types'
 import { registerIpcHandlers } from './ipc-handlers'
-import { createCompanionWindow, showCompanion, hideCompanion, resetCompanionPosition, setInitialRobotScale } from './companion-window'
+import { createCompanionWindow, resetCompanionPosition, setInitialRobotScale, setRobotWindowHandlers } from './companion-window'
 import { createGuidanceWindow, destroyGuidanceWindow, showLastGuidance } from './guidance-window'
 import { stopAnalysisLoop } from './analysis-loop'
 import { initProjects } from './projects'
@@ -25,8 +25,8 @@ import { isSafeExternalUrl, isAllowedAppNavigation, isBlockedDevShortcut } from 
 import { registerE2eTestHooks } from './e2e-hooks'
 import { macAppMenuTemplate, macDockMenuTemplate, type MenuActions } from './app-menu'
 import { createShutdown } from './app-shutdown'
-import { showRobot, hideRobot } from './robot-visibility'
-import { ROBOT_SHORTCUT, robotShortcutLabel, registerRobotShortcut } from './robot-shortcut'
+import { showRobot, hideRobot, isRobotHidden, robotWindowMinimized, robotWindowRestored } from './robot-visibility'
+import { ROBOT_SHORTCUT, registerRobotShortcut } from './robot-shortcut'
 import { loadRobotScale } from './robot-prefs'
 import { loadSetupState, needsSetup } from './setup-state'
 import { initWatchLog } from './watch-log'
@@ -269,7 +269,7 @@ function createSystemTray(): Tray {
     },
   ])
 
-  newTray.setToolTip(`MyBuildy — click to show the robot (${robotShortcutLabel(process.platform)})`)
+  newTray.setToolTip('MyBuildy — click to show the robot')
   newTray.setContextMenu(contextMenu)
 
   // Clicking the tray icon brings the robot back (e.g. after Hide).
@@ -295,9 +295,10 @@ const gotInstanceLock = app.requestSingleInstanceLock()
 if (!gotInstanceLock) {
   app.quit()
 } else {
+  // Opening MyBuildy again (Start menu, desktop shortcut) brings a hidden robot back.
   app.on('second-instance', () => {
     console.log('[App] second-instance — summoning companion')
-    showCompanion()
+    showRobot()
   })
 }
 
@@ -339,7 +340,11 @@ app.whenReady().then(async () => {
   // window even if a window is recreated (see app.on('activate')).
   registerIpcHandlers(() => mainWindow!, () => companionWindow, () => shutdownApp())
 
-  // Bring the robot back after Hide: Ctrl+Alt+B (Windows) / Cmd+Option+B (macOS).
+  // Hide minimizes the robot on Windows: its taskbar button brings it back.
+  setRobotWindowHandlers({ minimized: robotWindowMinimized, restored: robotWindowRestored })
+
+  // Also brings the robot back after Hide: Ctrl+Alt+B (Windows) / Cmd+Option+B
+  // (macOS) — kept working, never offered as the way (robot-hidden.ts).
   registerRobotShortcut(globalShortcut, () => showRobot())
 
   // Local diagnostic log of watch/send state changes (Settings → Open log folder).
@@ -385,7 +390,8 @@ app.whenReady().then(async () => {
   }
 })
 
-// macOS: clicking the Dock icon reopens the main window (and brings the robot back).
+// macOS: clicking the Dock icon, or opening MyBuildy again from Applications,
+// brings a hidden robot back; with the robot already showing it opens the panel.
 let readyAt = 0
 app.on('activate', () => {
   if (!app.isReady() || (app as any).isQuitting) return
@@ -397,7 +403,9 @@ app.on('activate', () => {
     guidanceWindow = createGuidanceWindow(companionWindow)
     voicePlayerWindow = createVoicePlayerWindow()
   }
-  showCompanion()
+  const wasHidden = isRobotHidden()
+  showRobot()
+  if (wasHidden) return // just the robot back, not the panel too
   // An 'activate' fired by the launch itself must not pop the panel open.
   if (Date.now() - readyAt > 1500) showMainPanel()
 })

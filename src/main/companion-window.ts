@@ -134,6 +134,9 @@ export function createCompanionWindow(): BrowserWindow {
 
   window.setAlwaysOnTop(true, 'screen-saver')
   floatOnAllWorkspaces(window)
+  // The taskbar button: minimizing the robot hides it, restoring brings it back.
+  window.on('minimize', () => onRobotMinimized())
+  window.on('restore', () => onRobotRestored())
   // The robot size is a zoom factor; re-apply it whenever the page (re)loads.
   window.webContents.on('did-finish-load', () => window.webContents.setZoomFactor(robotScale))
 
@@ -242,11 +245,21 @@ export function resetCompanionPosition(): void {
   companionRef.focus()
 }
 
+// What the app does when the robot's window is minimized or restored from the
+// taskbar (index.ts wires these to Hide / bring back, robot-visibility.ts).
+let onRobotMinimized: () => void = () => {}
+let onRobotRestored: () => void = () => {}
+export function setRobotWindowHandlers(handlers: { minimized(): void; restored(): void }): void {
+  onRobotMinimized = handlers.minimized
+  onRobotRestored = handlers.restored
+}
+
 /**
  * Show the companion and ensure it's visible on-screen.
  */
 export function showCompanion(): void {
   if (!companionRef || companionRef.isDestroyed()) return
+  if (companionRef.isMinimized()) companionRef.restore()
 
   const bounds = companionRef.getBounds()
   if (!isOnScreen(bounds.x, bounds.y)) {
@@ -268,11 +281,14 @@ export function showCompanion(): void {
 }
 
 /**
- * Hide the companion (used by the tray "Hide MyBuildy" action). The guidance window
- * follows automatically via the companion's 'hide' event.
+ * Hide the companion (the robot's Hide button). Windows: minimized, so its
+ * taskbar button stays and one click brings the robot back. macOS: hidden; the
+ * Dock icon brings it back (app 'activate'). The guidance window follows via
+ * the companion's 'hide' event, and robot-visibility.ts hides it too.
  */
 export function hideCompanion(): void {
   if (!companionRef || companionRef.isDestroyed()) return
-  companionRef.hide()
+  if (process.platform === 'win32') companionRef.minimize()
+  else companionRef.hide()
   console.log('[Companion] hideCompanion() — hidden')
 }

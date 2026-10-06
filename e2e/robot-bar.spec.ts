@@ -21,7 +21,8 @@ async function robotWindow(app: MyBuildyApp) {
   return app.app.evaluate(({ BrowserWindow }) => {
     const w = BrowserWindow.getAllWindows().find((b) => b.webContents.getURL().includes('companion=true'))!
     const g = BrowserWindow.getAllWindows().find((b) => b.webContents.getURL().includes('guidance=true'))!
-    return { bounds: w.getBounds(), zoom: w.webContents.getZoomFactor(), visible: w.isVisible(), guidanceVisible: g.isVisible() }
+    // On screen: shown and not minimized (Windows hides the robot by minimizing it, keeping its taskbar button).
+    return { bounds: w.getBounds(), zoom: w.webContents.getZoomFactor(), visible: w.isVisible() && !w.isMinimized(), minimized: w.isMinimized(), guidanceVisible: g.isVisible() }
   })
 }
 
@@ -98,20 +99,41 @@ test('Ctrl/Cmd + scroll wheel over the robot zooms it and shows the size', async
   await expect(m.companion.getByRole('status')).toHaveText('Robot size: 160%')
 })
 
-test('Hide: robot and guidance panel go away, new guidance stays hidden; the shortcut brings it back', async () => {
+test('Hide: says how to bring him back, then robot and panel go; the taskbar / Dock icon or opening MyBuildy again brings him back', async () => {
   await m.app.evaluate(() => (globalThis as unknown as Record<string, { showFixtureGuidance(): void }>)['__mybuildyE2E'].showFixtureGuidance())
   await expect.poll(async () => (await robotWindow(m)).guidanceVisible).toBe(true)
 
-  await m.companion.getByRole('button', { name: /^Hide the robot/ }).click()
-  await expect.poll(async () => (await robotWindow(m)).visible).toBe(false)
+  const hideButton = m.companion.getByRole('button', { name: /^Hide the robot/ })
+  const place = process.platform === 'darwin' ? 'Dock' : 'taskbar'
+  await expect(hideButton).toHaveAttribute('title', new RegExp(`click MyBuildy in your ${place}$`))
+  await hideButton.click()
+  await expect(m.companion.getByRole('alert')).toHaveText(`Buildy is hidden. Click MyBuildy in your ${place} to bring him back.`)
+  await expect.poll(async () => (await robotWindow(m)).visible, { timeout: 6000 }).toBe(false)
   expect((await robotWindow(m)).guidanceVisible).toBe(false)
+  // Windows: minimized, so MyBuildy's taskbar button is still there to click.
+  if (process.platform === 'win32') expect((await robotWindow(m)).minimized).toBe(true)
 
   // Guidance arriving while hidden is kept, not popped up.
   await m.app.evaluate(() => (globalThis as unknown as Record<string, { showFixtureGuidance(): void }>)['__mybuildyE2E'].showFixtureGuidance())
   await m.companion.waitForTimeout(400)
   expect((await robotWindow(m)).guidanceVisible).toBe(false)
 
-  // The shortcut is registered system-wide, and pressing it brings the robot back.
+  // Clicking MyBuildy in the taskbar (Windows: the window is restored) / Dock (macOS: the app is activated).
+  await m.app.evaluate(({ app, BrowserWindow }) => {
+    if (process.platform === 'darwin') { app.emit('activate'); return }
+    BrowserWindow.getAllWindows().find((b) => b.webContents.getURL().includes('companion=true'))!.restore()
+  })
+  await expect.poll(async () => (await robotWindow(m)).visible).toBe(true)
+
+  // Opening MyBuildy again from the Start menu / Applications brings him back too.
+  await hideButton.click()
+  await expect.poll(async () => (await robotWindow(m)).visible, { timeout: 6000 }).toBe(false)
+  await m.app.evaluate(({ app }) => { app.emit(process.platform === 'darwin' ? 'activate' : 'second-instance') })
+  await expect.poll(async () => (await robotWindow(m)).visible).toBe(true)
+
+  // The shortcut still works (it is just never offered as the way).
+  await hideButton.click()
+  await expect.poll(async () => (await robotWindow(m)).visible, { timeout: 6000 }).toBe(false)
   expect(await m.app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered('CommandOrControl+Alt+B'))).toBe(true)
   await m.app.evaluate(() => (globalThis as unknown as Record<string, { pressRobotShortcut(): void }>)['__mybuildyE2E'].pressRobotShortcut())
   await expect.poll(async () => (await robotWindow(m)).visible).toBe(true)

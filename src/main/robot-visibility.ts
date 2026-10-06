@@ -1,14 +1,17 @@
 // robot-visibility.ts — main process. The robot's Hide button: the robot and
-// the guidance panel go away but watching carries on. It comes back from the
-// tray icon or Ctrl/Cmd+Alt+B (robot-shortcut.ts). While hidden, a hand-off
-// or an alert (blocked, the agent asking a question) arrives as a system
-// notification instead — the same moments that raise the robot's "!" badge.
+// the guidance panel go away but watching carries on. It comes back when the
+// user clicks MyBuildy in the taskbar (Windows) or Dock (macOS), opens MyBuildy
+// again from the Start menu or Applications, clicks the tray icon, or presses
+// Ctrl/Cmd+Alt+B (robot-shortcut.ts — kept, but never offered as the way).
+// While hidden, a hand-off or an alert (blocked, the agent asking a question)
+// arrives as a system notification instead — the same moments that raise the
+// robot's "!" badge.
 
 import { Notification } from 'electron'
 import type { AnalysisResult } from '../renderer/src/types'
 import { showCompanion, hideCompanion } from './companion-window'
 import { hideGuidanceWindow, setGuidanceSuppressed } from './guidance-window'
-import { robotShortcutLabel } from './robot-shortcut'
+import { bringBackHint } from '../renderer/src/robot-hidden'
 
 let hidden = false
 let previous: AnalysisResult | null = null
@@ -32,6 +35,16 @@ export function showRobot(): void {
   showCompanion()
 }
 
+/** The robot's window was minimized from the taskbar: the same as Hide. */
+export function robotWindowMinimized(): void {
+  if (!hidden) hideRobot()
+}
+
+/** The robot's window was restored from the taskbar: bring the robot back. */
+export function robotWindowRestored(): void {
+  if (hidden) showRobot()
+}
+
 /**
  * PURE: the notification to show for this analysis while the robot is hidden,
  * or null. A new hand-off or blocked state, or the agent newly asking a
@@ -45,7 +58,7 @@ export function hiddenAlertFor(
   // The same transitions that raise the robot's "!" badge (mascot-signals.ts):
   // into blocked / hand-off, or into the agent asking a permission question.
   const alerting = (a: AnalysisResult | null): boolean => !!a && (a.goalAlignment === 'blocked' || !!a.needsHumanJudgment)
-  const bringBack = `Press ${robotShortcutLabel(platform)} or click the MyBuildy tray icon to see it.`
+  const bringBack = bringBackHint(platform)
   if (alerting(current) && !alerting(prev)) {
     if (current.needsHumanJudgment) {
       return { title: 'MyBuildy needs your decision', body: `${current.humanJudgmentReason || 'A decision is waiting for you.'} ${bringBack}` }

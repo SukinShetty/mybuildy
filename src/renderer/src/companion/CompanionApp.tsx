@@ -11,6 +11,7 @@ import { currentAnimation, reactionSeconds, robotGlow, type RobotReaction, type 
 import { nextStepLabel } from './next-step'
 import { ResolvedHandoffs } from '../handoff'
 import { robotSizeText } from '../robot-size'
+import { robotHiddenMessage, hideButtonTitle } from '../robot-hidden'
 import { useRefreshWhileOpen } from '../components/useRefreshWhileOpen'
 import { BAR_BACKGROUND_CSS, ICON_COLOR, ICON_HOVER_COLOR, ICON_HOVER_BACKGROUND_CSS } from './robot-theme'
 import type { AnalysisResult, WatchStatus } from '../types'
@@ -41,6 +42,7 @@ export function CompanionApp(): React.ReactElement {
   const [pendingPick, setPendingPick] = useState<{ id: string; name: string } | null>(null)
   const [confirmQuit, setConfirmQuit] = useState(false)
   const [sizeToast, setSizeToast] = useState<string | null>(null)
+  const [hiding, setHiding] = useState(false)
   const mascotWrapRef = useRef<HTMLDivElement | null>(null)
   const isMutedRef = useRef(isMuted)
   isMutedRef.current = isMuted
@@ -351,7 +353,15 @@ export function CompanionApp(): React.ReactElement {
   function onQuiet(): void { const q = !isQuietMode; setQuietMode(q); window.mybuildy.setQuietMode(q) }
   function onSettings(): void { window.mybuildy.openPanel() }
   // Hide: the robot and its guidance panel go away; watching carries on.
-  function onHide(): void { window.mybuildy.robot.hide() }
+  // First say how to bring him back (taskbar / Dock), then go.
+  function onHide(): void {
+    if (hiding) return
+    setHiding(true)
+    setTimeout(() => {
+      setHiding(false)
+      window.mybuildy.robot.hide()
+    }, HIDE_NOTICE_MS)
+  }
 
   // Robot size: show it briefly whenever it changes (Settings or zooming).
   useEffect(() => {
@@ -483,13 +493,16 @@ export function CompanionApp(): React.ReactElement {
         <Btn icon={gearIcon} onClick={onSettings} active={false} title="Settings" />
         {/* Get it off the screen: Hide first, then a gap, then Quit (hard to hit by accident). */}
         <div style={S.pillDivider} />
-        <Btn icon={eyeOffIcon} onClick={onHide} active={false} title={`Hide the robot (keeps watching). Bring it back: tray icon or ${SHORTCUT_LABEL}`} />
+        <Btn icon={eyeOffIcon} onClick={onHide} active={false} title={hideButtonTitle(window.mybuildy.platform)} />
         <div style={S.quitGap} />
         <Btn icon={quitIcon} onClick={() => setConfirmQuit(true)} active={false} title="Quit MyBuildy" />
       </div>
 
       {/* Robot size, shown briefly while zooming (Ctrl/Cmd + scroll wheel) */}
       {sizeToast && <div style={S.sizeToast} role="status">{sizeToast}</div>}
+
+      {/* Hide: how to bring him back, before he goes */}
+      {hiding && <div style={S.hideNotice} role="alert">{robotHiddenMessage(window.mybuildy.platform)}</div>}
 
       {/* Quit asks first */}
       {confirmQuit && (
@@ -601,7 +614,8 @@ const monitorIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"
 const showLastIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
 const eyeOffIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
 const quitIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>'
-const SHORTCUT_LABEL = window.mybuildy.platform === 'darwin' ? 'Cmd+Option+B' : 'Ctrl+Alt+B'
+// How long the "Buildy is hidden…" line shows before the robot goes.
+const HIDE_NOTICE_MS = 2500
 const gearIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>'
 
 function trunc(t: string, n: number): string { return t.length > n ? t.slice(0, n - 1) + '\u2026' : t }
@@ -681,6 +695,18 @@ const S = {
   quitGap: {
     width: 6,
     flexShrink: 0,
+  },
+  hideNotice: {
+    marginTop: 6,
+    maxWidth: 300,
+    fontSize: 12,
+    fontWeight: 600,
+    lineHeight: 1.35,
+    textAlign: 'center' as const,
+    color: '#F2F2F7',
+    background: 'rgba(28,28,30,0.95)',
+    padding: '6px 12px',
+    borderRadius: 12,
   },
   sizeToast: {
     marginTop: 6,
