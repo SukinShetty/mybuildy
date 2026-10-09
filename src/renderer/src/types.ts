@@ -142,16 +142,18 @@ export interface NonSecretSettings {
   baseUrl: string                // Base URL — used by ollama, lmstudio, custom, openrouter
   autoAnalysisIntervalSeconds: number
   elevenLabsVoiceId: string      // ElevenLabs voice ID (default: Rachel — warm, friendly)
-  buildyVoice: BuildyVoice       // Buildy's own voice (Kokoro): Bella (default) or Puck
+  buildyVoice: BuildyVoice       // Buildy's own voice (Kokoro): female (Bella, default) or male (Puck)
   hourlyCallCap: number          // Cost guard: max provider calls per rolling hour (20–600)
   captureNoticeAccepted: boolean // one-time privacy disclosure accepted (first window pick)
 }
 
-// Buildy's own voices (Kokoro, bundled): Bella is the default.
+// Buildy's own voices (Kokoro, bundled): the female voice (Bella) is the default.
+// Users only ever see "Female voice" / "Male voice": the voice names (Bella,
+// Puck) and the model name stay internal (ids, logs, code).
 export type BuildyVoice = 'bella' | 'puck'
 export const BUILDY_VOICES: ReadonlyArray<{ id: BuildyVoice; name: string; label: string; kokoroVoice: string }> = [
-  { id: 'bella', name: 'Bella', label: 'Bella (female)', kokoroVoice: 'af_bella' },
-  { id: 'puck', name: 'Puck', label: 'Puck (male)', kokoroVoice: 'am_puck' },
+  { id: 'bella', name: 'Female voice', label: 'Female voice', kokoroVoice: 'af_bella' },
+  { id: 'puck', name: 'Male voice', label: 'Male voice', kokoroVoice: 'am_puck' },
 ]
 export const DEFAULT_BUILDY_VOICE: BuildyVoice = 'bella'
 export function isBuildyVoice(value: unknown): value is BuildyVoice {
@@ -610,7 +612,7 @@ export const IPC = {
   ANALYSIS_RESULT:     'mybuildy:analysis-result',     // main → main window (each analysis the robot gets, for the Guidance tab)
   VOICE_PREPARING:     'voice:preparing',              // main → robot (a line waits while Buildy's voice is still loading)
   VOICE_SAMPLE:        'voice:sample',                 // main window → main (Settings: play a short sample in one of Buildy's voices)
-  BUILDY_VOICE_SET:    'voice:buildy-voice-set',       // main window → main (Settings: choose Bella or Puck; from the next sentence)
+  BUILDY_VOICE_SET:    'voice:buildy-voice-set',       // main window → main (Settings: choose Female or Male voice; from the next sentence)
   VOICE_FALLBACK:      'voice:fallback',               // main → robot + main window (VoiceFallback, or null when ElevenLabs works again)
   VOICE_FALLBACK_GET:  'voice:fallback-get',           // renderer → main (the current VoiceFallback or null)
   OPEN_SETTINGS:       'mybuildy:open-settings',       // robot → main (show the panel on Settings)

@@ -17,7 +17,7 @@ import { useAppStore } from '../store/useAppStore'
 import { RobotSizeSetting } from '../components/RobotSizeSetting'
 import type { ProviderType, NonSecretSettings, SecretName, ModelChoice, VoiceFallback, BuildyVoice } from '../types'
 import {
-  BUILDY_VOICES,
+  BUILDY_VOICES, DEFAULT_BUILDY_VOICE,
   HOURLY_CALL_CAP_MIN, HOURLY_CALL_CAP_MAX, NO_SECURE_STORAGE_MESSAGE, API_CREDITS_NOTE, PROVIDER_BILLING_URLS,
   dataDestinationNote, suggestsNextModel,
 } from '../types'
@@ -140,7 +140,7 @@ export function SettingsScreen(): React.ReactElement {
   const [replacingKey, setReplacingKey] = useState(false)
   const [elevenKeyInput, setElevenKeyInput] = useState('')
   const [replacingElevenKey, setReplacingElevenKey] = useState(false)
-  // Buildy's voice: Bella or Puck, saved at once (used from the next sentence), and a sample of each.
+  // Buildy's voice: Female voice (Bella) or Male voice (Puck), saved at once (used from the next sentence), and a sample of each.
   const [samplePlaying, setSamplePlaying] = useState<BuildyVoice | null>(null)
   const [sampleMessage, setSampleMessage] = useState<string | null>(null)
   async function chooseBuildyVoice(voice: BuildyVoice): Promise<void> {
@@ -614,7 +614,7 @@ export function SettingsScreen(): React.ReactElement {
           />
         </div>
 
-        {/* Voice: Buildy's own voice (Bella by default, or Puck); ElevenLabs optional */}
+        {/* Voice: Buildy's own voice (Female voice by default, or Male voice); ElevenLabs optional */}
         <div style={styles.section}>
           <div style={styles.sectionLabel}>Voice</div>
           <div style={styles.voiceOptionLabel}>Buildy&apos;s voice</div>
@@ -630,10 +630,10 @@ export function SettingsScreen(): React.ReactElement {
                   <input
                     type="radio"
                     name="buildy-voice"
-                    checked={(settings.buildyVoice ?? 'bella') === v.id}
+                    checked={(settings.buildyVoice ?? DEFAULT_BUILDY_VOICE) === v.id}
                     onChange={() => { void chooseBuildyVoice(v.id) }}
                   />
-                  {v.label}{v.id === 'bella' ? ' — default' : ''}
+                  {v.label}{v.id === DEFAULT_BUILDY_VOICE ? ' — default' : ''}
                 </label>
                 <button
                   className="btn-ghost"
