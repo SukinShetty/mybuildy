@@ -15,8 +15,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { RobotSizeSetting } from '../components/RobotSizeSetting'
-import type { ProviderType, NonSecretSettings, SecretName, ModelChoice, VoiceFallback } from '../types'
+import type { ProviderType, NonSecretSettings, SecretName, ModelChoice, VoiceFallback, BuildyVoice } from '../types'
 import {
+  BUILDY_VOICES, DEFAULT_BUILDY_VOICE,
   HOURLY_CALL_CAP_MIN, HOURLY_CALL_CAP_MAX, NO_SECURE_STORAGE_MESSAGE, API_CREDITS_NOTE, PROVIDER_BILLING_URLS,
   dataDestinationNote, suggestsNextModel,
 } from '../types'
@@ -139,6 +140,24 @@ export function SettingsScreen(): React.ReactElement {
   const [replacingKey, setReplacingKey] = useState(false)
   const [elevenKeyInput, setElevenKeyInput] = useState('')
   const [replacingElevenKey, setReplacingElevenKey] = useState(false)
+  // Buildy's voice: Female voice (Bella) or Male voice (Puck), saved at once (used from the next sentence), and a sample of each.
+  const [samplePlaying, setSamplePlaying] = useState<BuildyVoice | null>(null)
+  const [sampleMessage, setSampleMessage] = useState<string | null>(null)
+  async function chooseBuildyVoice(voice: BuildyVoice): Promise<void> {
+    setSettings({ ...useAppStore.getState().settings, buildyVoice: voice }) // shown at once
+    await window.mybuildy.setBuildyVoice(voice)
+  }
+  async function playBuildyVoiceSample(voice: BuildyVoice): Promise<void> {
+    setSampleMessage(null)
+    setSamplePlaying(voice)
+    try {
+      const played = await window.mybuildy.playVoiceSample(voice)
+      if (!played) setSampleMessage("Buildy's voice can't play right now — see the message above.")
+    } finally {
+      setTimeout(() => setSamplePlaying(null), 1500)
+    }
+  }
+
   // ElevenLabs failed and the computer's voice is speaking: say so here too.
   const [voiceFallback, setVoiceFallback] = useState<VoiceFallback | null>(null)
   useEffect(() => {
@@ -247,6 +266,8 @@ export function SettingsScreen(): React.ReactElement {
       baseUrl: baseUrl.trim(),
       autoAnalysisIntervalSeconds: settings.autoAnalysisIntervalSeconds,
       elevenLabsVoiceId: elevenLabsVoiceId.trim() || DEFAULT_VOICE_ID,
+      // Saved on its own when chosen (voice:buildy-voice-set); this keeps it as it is.
+      buildyVoice: useAppStore.getState().settings.buildyVoice,
       hourlyCallCap: clampCap(hourlyCallCap),
       captureNoticeAccepted: settings.captureNoticeAccepted,
       ...overrides,
@@ -593,15 +614,39 @@ export function SettingsScreen(): React.ReactElement {
           />
         </div>
 
-        {/* Voice: Buildy's own voice (Bella) by default; ElevenLabs optional */}
+        {/* Voice: Buildy's own voice (Female voice by default, or Male voice); ElevenLabs optional */}
         <div style={styles.section}>
           <div style={styles.sectionLabel}>Voice</div>
+          <div style={styles.voiceOptionLabel}>Buildy&apos;s voice</div>
           <div style={styles.voiceDefault} data-testid="voice-default">
-            <strong>Buildy&apos;s voice: Bella</strong>
             {settings.hasElevenLabsKey
-              ? ' — free, on your computer. Speaks if ElevenLabs stops working.'
-              : ' (default) — free, on your computer. Nothing to set up.'}
+              ? 'Free, on your computer. Speaks if ElevenLabs stops working.'
+              : 'Free, on your computer. Nothing to set up.'}
           </div>
+          <div role="radiogroup" aria-label="Buildy's voice" style={styles.voiceChoices}>
+            {BUILDY_VOICES.map((v) => (
+              <div key={v.id} style={styles.voiceChoiceRow}>
+                <label style={styles.voiceChoiceLabel}>
+                  <input
+                    type="radio"
+                    name="buildy-voice"
+                    checked={(settings.buildyVoice ?? DEFAULT_BUILDY_VOICE) === v.id}
+                    onChange={() => { void chooseBuildyVoice(v.id) }}
+                  />
+                  {v.label}{v.id === DEFAULT_BUILDY_VOICE ? ' — default' : ''}
+                </label>
+                <button
+                  className="btn-ghost"
+                  onClick={() => { void playBuildyVoiceSample(v.id) }}
+                  disabled={samplePlaying !== null}
+                  aria-label={`Play sample: ${v.name}`}
+                >
+                  {samplePlaying === v.id ? 'Playing…' : 'Play sample'}
+                </button>
+              </div>
+            ))}
+          </div>
+          {sampleMessage && <div style={styles.sectionHint} role="status">{sampleMessage}</div>}
           {voiceFallback && (
             <div style={styles.voiceFallback} role="alert" data-testid="settings-voice-fallback">
               <strong>{voiceFallback.headline}.</strong> {voiceFallback.reason}
@@ -1086,6 +1131,26 @@ const styles = {
     color: 'var(--color-text)',
     marginTop: 4,
     marginBottom: 8,
+  },
+  voiceChoices: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 6,
+    marginBottom: 10,
+  },
+  voiceChoiceRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  voiceChoiceLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    fontSize: 13,
+    color: 'var(--color-text)',
+    cursor: 'pointer',
   },
   voiceOptionLabel: {
     fontSize: 12,

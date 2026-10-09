@@ -169,7 +169,7 @@ MyBuildy opens a **guided setup** on first launch — one step per screen, about
 
 Afterwards the line under the robot always says the next thing to do. The robot's bar can **Hide** it while it keeps watching (bring it back by clicking MyBuildy in your taskbar, or the Dock on Mac; **Ctrl+Alt+B** / **Cmd+Option+B** also works) or **Quit** MyBuildy; Settings → **Robot size** makes it bigger or smaller (or hold Ctrl/Cmd and scroll over the robot). Settings has **Run setup again**.
 
-**Voice.** Buildy speaks with his own voice, Bella, which is bundled with MyBuildy and runs on your computer: free, nothing to set up, nothing sent anywhere. Optional: add an **ElevenLabs** key in Settings → Voice to use an ElevenLabs voice instead and to get the mic button for spoken questions (the microphone is only requested the first time you click it). Buildy's own voice is new since 0.1.0 (see [CHANGELOG](./CHANGELOG.md), Unreleased); the 0.1.0 installer speaks with ElevenLabs or your computer's voice.
+**Voice.** Buildy speaks with his own voice, which is bundled with MyBuildy and runs on your computer: free, nothing to set up, nothing sent anywhere. Choose **Female voice** (the default) or **Male voice** in Settings → Voice, with Play sample for each; the change applies from the next sentence. Optional: add an **ElevenLabs** key in Settings → Voice to use an ElevenLabs voice instead and to get the mic button for spoken questions (the microphone is only requested the first time you click it). Buildy's own voice is new since 0.1.0 (see [CHANGELOG](./CHANGELOG.md), Unreleased); the 0.1.0 installer speaks with ElevenLabs or your computer's voice.
 
 ---
 
@@ -278,7 +278,7 @@ There is no default model. Open Settings, pick a provider and a model, and let t
 The model you picked can't read images. Pick a vision-capable model (the model list marks likely candidates), or for local providers make sure the server is running and the model supports images.
 
 **The mascot is silent.**
-Voice uses this order: **ElevenLabs** when a key is saved in Settings; otherwise **Buildy's own voice** (Bella, which runs on your computer); and your **computer's own voice** only if Buildy's voice can't run. MyBuildy never switches voice silently: if one fails, the robot and Settings → Voice say which voice failed, which one is speaking instead, and why. Check that quiet mode is off on the mascot. (Buildy's own voice is newer than the 0.1.0 installer, which uses ElevenLabs or the computer's voice.)
+Voice uses this order: **ElevenLabs** when a key is saved in Settings; otherwise **Buildy's own voice** (Female voice or Male voice, as chosen in Settings → Voice; it runs on your computer); and your **computer's own voice** only if Buildy's voice can't run. MyBuildy never switches voice silently: if one fails, the robot and Settings → Voice say which voice failed, which one is speaking instead, and why. Check that quiet mode is off on the mascot. (Buildy's own voice is newer than the 0.1.0 installer, which uses ElevenLabs or the computer's voice.)
 
 **Analysis stopped by itself.**
 You likely hit the hourly call cap. Raise it in Settings or wait for the rolling hour to pass.

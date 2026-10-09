@@ -26,7 +26,8 @@ import { loadSettings } from './memory'
 import { debugLog } from './debug-log'
 import { logWatchEvent } from './watch-log'
 import { VoiceHealth, type VoiceFailureCode, type VoiceFallbackState, type FallbackVoice } from './voice-health'
-import { kokoroStatus, prefetchKokoro, speakWithKokoro, clearKokoroPrefetch } from './kokoro-engine'
+import { kokoroStatus, kokoroIsLoading, prefetchKokoro, speakWithKokoro, clearKokoroPrefetch } from './kokoro-engine'
+import { DEFAULT_BUILDY_VOICE, type BuildyVoice } from '../renderer/src/types'
 import { splitIntoSentences } from './kokoro-chunks'
 
 const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'
@@ -36,6 +37,7 @@ let voiceWin: BrowserWindow | null = null
 let queue: VoiceQueue | null = null
 let cachedSettings: AppSettings | null = null
 let cachedAt = 0
+let progressText: string | null = null // the sentence being made or played
 
 // The voice order: ElevenLabs when the user set a key, otherwise Buildy's own
 // voice (Kokoro, Bella), and the computer's voice only if Buildy's can't run.
@@ -47,6 +49,30 @@ let voiceNotice: (state: VoiceFallbackState | null) => void = () => {}
 
 export function setVoiceFallbackNotice(notify: (state: VoiceFallbackState | null) => void): void {
   voiceNotice = notify
+}
+
+// A line is waiting while Buildy's voice is still loading: the robot shows he
+// is getting ready to speak (ipc-handlers.ts sends it to the robot).
+let preparingNotice: (preparing: boolean) => void = () => {}
+let preparing = false
+export function setVoicePreparingNotice(notify: (preparing: boolean) => void): void {
+  preparingNotice = notify
+}
+function setPreparing(next: boolean): void {
+  if (next === preparing) return
+  preparing = next
+  preparingNotice(next)
+}
+
+/** Buildy's voice from Settings (Bella or Puck), for the next sentence. */
+function buildyVoice(): BuildyVoice {
+  return cachedSettings?.buildyVoice ?? DEFAULT_BUILDY_VOICE
+}
+
+/** Bella or Puck was chosen in Settings: re-read it, so the next sentence uses it. */
+export function buildyVoiceChanged(): void {
+  cachedSettings = null
+  void getSettings()
 }
 
 export function getVoiceFallback(): VoiceFallbackState | null {
@@ -78,6 +104,7 @@ function kokoroIsTheVoice(): boolean {
 
 // For the diagnostic log: which voice spoke each line, and how long until its first word.
 let lastEngine: Engine = 'system'
+let lastBuildyVoice: BuildyVoice = DEFAULT_BUILDY_VOICE
 const lineTimes = new Map<string, { queuedAt: number; startedAt: number }>()
 
 function noteFirstWord(chunkId: string): void {
@@ -87,7 +114,12 @@ function noteFirstWord(chunkId: string): void {
   lineTimes.delete(itemId)
   if (!times) return
   const now = Date.now()
-  logWatchEvent('voice-line', { engine: lastEngine, firstWordMs: now - times.startedAt, sinceQueuedMs: now - times.queuedAt })
+  logWatchEvent('voice-line', {
+    engine: lastEngine,
+    ...(lastEngine === 'kokoro' ? { voice: lastBuildyVoice } : {}),
+    firstWordMs: now - times.startedAt,
+    sinceQueuedMs: now - times.queuedAt,
+  })
 }
 
 function voiceWorked(): void {
@@ -159,8 +191,9 @@ export function createVoicePlayerWindow(): BrowserWindow {
     sink: {
       playAudio: (id, audioBase64) => {
         if (win.isDestroyed()) return
-        console.log(`[VoicePlayer-Main] → play-audio ${id} (${lastEngine})`)
+        console.log(`[VoicePlayer-Main] → play-audio ${id} (${lastEngine}${lastEngine === 'kokoro' ? ` ${lastBuildyVoice}` : ''})`)
         noteFirstWord(id)
+        sendSpeechProgress(progressText) // highlighted only now that its audio plays
         win.webContents.send(IPC.VOICE_PLAY_AUDIO, { id, audioBase64 })
       },
       playTts: (id, text) => {
@@ -168,6 +201,7 @@ export function createVoicePlayerWindow(): BrowserWindow {
         console.log(`[VoicePlayer-Main] → play-tts ${id}`)
         lastEngine = 'system'
         noteFirstWord(id)
+        sendSpeechProgress(progressText)
         win.webContents.send(IPC.VOICE_PLAY_TTS, { id, text })
       },
       stop: () => {
@@ -194,9 +228,14 @@ export function createVoicePlayerWindow(): BrowserWindow {
           elevenLabsFailure = 'other'
         }
       }
-      const wav = await speakWithKokoro(chunkText)
+      // Buildy's voice still loading: the robot shows he's getting ready to speak.
+      const voice = buildyVoice()
+      if (kokoroIsLoading()) setPreparing(true)
+      const wav = await speakWithKokoro(chunkText, voice)
+      setPreparing(false)
       if (wav) {
         lastEngine = 'kokoro'
+        lastBuildyVoice = voice
         if (elevenLabsFailure) voiceFailed(elevenLabsFailure, 'kokoro')
         else voiceWorked()
         return wav
@@ -215,8 +254,9 @@ export function createVoicePlayerWindow(): BrowserWindow {
         const times = lineTimes.get(info.id)
         if (times) times.startedAt = Date.now()
       }
-      // Tell the guidance window which sentence is currently being spoken.
-      sendSpeechProgress(info.chunkText)
+      // The sentence about to be made: the guidance window highlights it only
+      // once its audio starts (playAudio / playTts), never while it's being made.
+      progressText = info.chunkText
     },
   })
 
@@ -234,14 +274,34 @@ export function enqueueSpeech(req: SpeakRequest): void {
   if (lineTimes.size > 50) lineTimes.delete(lineTimes.keys().next().value as string)
   // Buildy's own voice: start making every sentence now, in order, so each one
   // is ready by the time the one before it has been spoken.
-  if (kokoroIsTheVoice()) prefetchKokoro(splitIntoSentences(req.text))
+  if (kokoroIsTheVoice()) prefetchKokoro(splitIntoSentences(req.text), buildyVoice())
   queue.enqueue(req)
 }
 
 export function stopVoice(): void {
   clearKokoroPrefetch()
   queue?.stop()
+  setPreparing(false)
   sendSpeechProgress(null)
+}
+
+const SAMPLE_LINE = "Hi! This is how I'll sound when I tell you what your coding agent just did."
+let sampleCount = 0
+
+/**
+ * Settings → Voice → Play sample: a short line in Bella or Puck, now. Stops
+ * whatever was being said; never goes through the queue (so it is not
+ * remembered as said). Returns false if Buildy's voice can't speak right now.
+ */
+export async function playVoiceSample(voice: BuildyVoice): Promise<boolean> {
+  stopVoice()
+  if (kokoroIsLoading()) setPreparing(true)
+  const wav = await speakWithKokoro(SAMPLE_LINE, voice)
+  setPreparing(false)
+  if (!wav || !voiceWin || voiceWin.isDestroyed()) return false
+  logWatchEvent('voice-sample', { voice })
+  voiceWin.webContents.send(IPC.VOICE_PLAY_AUDIO, { id: `sample-${++sampleCount}`, audioBase64: wav })
+  return true
 }
 
 export function setVoiceMuted(muted: boolean): void {
@@ -253,16 +313,18 @@ export function resetVoiceDedup(): void {
   queue?.resetDedup()
 }
 
-/** Called when the voice window reports a clip finished. */
+/** Called when the voice window reports a clip finished: nothing is playing until the next starts. */
 export function handleVoiceEnded(id: string): void {
+  if (id.startsWith('sample-')) return
+  sendSpeechProgress(null)
   queue?.onEnded(id)
-  if (queue && !queue.isBusy()) sendSpeechProgress(null)
 }
 
 /** Called when the voice window reports a clip failed. */
 export function handleVoiceError(id: string): void {
+  if (id.startsWith('sample-')) return
+  sendSpeechProgress(null)
   queue?.onError(id)
-  if (queue && !queue.isBusy()) sendSpeechProgress(null)
 }
 
 export function destroyVoicePlayer(): void {

@@ -43,6 +43,11 @@ describe('the line under the robot always says what to do next', () => {
     expect(nextStepLabel({ ...base, thinking: true, watchedSourceMessage: 'The watched window is hidden.' }))
       .toBe('Thinking about what just happened…')
   })
+  it("while Buildy's voice loads with a line waiting: getting ready to speak", () => {
+    expect(nextStepLabel({ ...base, voicePreparing: true, analysis: analysis({ nextPrompt: 'x', terminalState: 'awaiting_prompt' }) }))
+      .toBe('Getting my voice ready…')
+    expect(nextStepLabel({ ...base, voicePreparing: true, thinking: true })).toBe('Thinking about what just happened…')
+  })
   it('never a step already done: a pasted prompt is not offered again — Enter is the next step', () => {
     const ready = analysis({ nextPrompt: 'Add a login page', terminalState: 'awaiting_prompt' })
     expect(nextStepLabel({ ...base, analysis: ready, promptAlreadyPasted: true })).toBe('Pasted — now press Enter in your terminal')

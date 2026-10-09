@@ -68,6 +68,8 @@ export interface RobotSituation {
   dragDirection: 'left' | 'right' | null
   /** MyBuildy itself is analysing (a screen analysis, or answering a spoken question). */
   analysing: boolean
+  /** A line is waiting while Buildy's voice is still loading: he's getting ready to speak. */
+  voicePreparing?: boolean
   /** A hand-off decision card is open (an unresolved human-judgment moment). */
   handoffOpen: boolean
   /** The coding agent is mid-turn. */
@@ -91,6 +93,7 @@ export interface RobotSituation {
 export function ongoingAnimation(s: RobotSituation): RobotAnimation {
   if (s.dragging) return s.dragDirection === 'left' ? 'running-left' : 'running-right'
   if (s.analysing) return 'working'
+  if (s.voicePreparing) return 'waiting' // getting ready to speak
   if (s.handoffOpen) return 'waiting'
   if (s.paused) return s.promptReady ? 'waving' : 'idle'
   if (s.agentWorking) return 'review'

@@ -70,6 +70,11 @@ describe('ongoingAnimation: MyBuildy events → robot state', () => {
   })
   it('paused with a prompt ready (Analyze Now with Auto off) → waving', () =>
     expect(ongoingAnimation(at({ paused: true, promptReady: true }))).toBe('waving'))
+  it("a line waits while Buildy's voice loads → waiting (getting ready to speak), not idle", () => {
+    expect(ongoingAnimation(at({ voicePreparing: true }))).toBe('waiting')
+    expect(ongoingAnimation(at({ voicePreparing: true, paused: true }))).toBe('waiting')
+    expect(ongoingAnimation(at({ voicePreparing: true, analysing: true }))).toBe('working')
+  })
   it('an analysis runs even while paused (Analyze Now) → working', () =>
     expect(ongoingAnimation(at({ paused: true, analysing: true }))).toBe('working'))
 })

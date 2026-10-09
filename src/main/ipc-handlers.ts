@@ -7,7 +7,7 @@ import { originOf, customKeyActionOnSave } from './provider-origins'
 import { providerHttpError, readJson, mapProviderError } from './ai/provider-errors'
 import { providerFetch, withCancellation, CancelledError } from './ai/fetch-with-timeout'
 import { guardedSender } from './project-guard'
-import { watchLogDir } from './watch-log'
+import { watchLogDir, logWatchEvent } from './watch-log'
 import { e2eFakes, FAKE_MODELS, fakeTerminalSourceId } from './e2e-fakes'
 import { hideRobot } from './robot-visibility'
 import { applyRobotScale, getRobotScale } from './companion-window'
@@ -20,11 +20,14 @@ import {
 } from './setup-permissions'
 import { mkdirSync } from 'fs'
 import type { BrowserWindow } from 'electron'
-import { isModelConfigured } from '../renderer/src/types'
+import { isModelConfigured, isBuildyVoice } from '../renderer/src/types'
 import { IPC, CHOOSE_MODEL_MESSAGE, CAPTURE_NOTICE_REQUIRED_MESSAGE, MAC_PERMISSION_MESSAGES, MAC_BLANK_CAPTURE_MESSAGE } from '../renderer/src/types'
 import type { AppSettings, NonSecretSettings, GuidancePayload, WatchStartResult, AnalyzeNowResult } from '../renderer/src/types'
 import { showGuidanceWindow, hideGuidanceWindow, resizeGuidanceWindow, showLastGuidance, getGuidanceWebContentsId, setGuidanceFocusable, clearGuidanceCache } from './guidance-window'
-import { handleVoiceEnded, handleVoiceError, stopVoice, setVoiceMuted, resetVoiceDedup, setVoiceFallbackNotice, getVoiceFallback, resetVoiceHealth } from './voice-player'
+import {
+  handleVoiceEnded, handleVoiceError, stopVoice, setVoiceMuted, resetVoiceDedup, setVoiceFallbackNotice, getVoiceFallback, resetVoiceHealth,
+  setVoicePreparingNotice, playVoiceSample, buildyVoiceChanged,
+} from './voice-player'
 import * as nemp from './nemp-bridge'
 import { listOpenWindows, probeWatchedWindowFrame } from './capturer'
 import {
@@ -172,6 +175,29 @@ export function registerIpcHandlers(
       if (win && !win.isDestroyed()) win.webContents.send(IPC.VOICE_FALLBACK, fallback)
     }
   })
+  // A line waits while Buildy's voice loads: the robot shows he's getting ready to speak.
+  setVoicePreparingNotice((preparing) => {
+    const companion = getCompanionWindow()
+    if (companion && !companion.isDestroyed()) companion.webContents.send(IPC.VOICE_PREPARING, preparing)
+  })
+
+  // Settings → Voice: Bella or Puck, saved at once, used from the next sentence.
+  ipcMain.handle(IPC.BUILDY_VOICE_SET, async (event, voiceRaw: unknown) => {
+    assertFromMainWindow(event, mainWcId(), 'BUILDY_VOICE_SET')
+    if (!isBuildyVoice(voiceRaw)) throw new Error('Unknown voice on BUILDY_VOICE_SET')
+    await saveNonSecretSettings({ ...(await loadNonSecretSettings()), buildyVoice: voiceRaw })
+    invalidateSettingsCache()
+    buildyVoiceChanged()
+    logWatchEvent('voice-chosen', { voice: voiceRaw })
+  })
+
+  // Settings → Voice → Play sample.
+  ipcMain.handle(IPC.VOICE_SAMPLE, async (event, voiceRaw: unknown): Promise<boolean> => {
+    assertFromMainWindow(event, mainWcId(), 'VOICE_SAMPLE')
+    if (!isBuildyVoice(voiceRaw)) throw new Error('Unknown voice on VOICE_SAMPLE')
+    return playVoiceSample(voiceRaw)
+  })
+
   ipcMain.handle(IPC.VOICE_FALLBACK_GET, async () => {
     const state = getVoiceFallback()
     return state ? { code: state.code, headline: state.headline, reason: state.reason } : null

@@ -32,6 +32,7 @@ function nonSecretFrom(s: RedactedSettings, overrides: Partial<NonSecretSettings
     baseUrl: s.baseUrl,
     autoAnalysisIntervalSeconds: s.autoAnalysisIntervalSeconds,
     elevenLabsVoiceId: s.elevenLabsVoiceId,
+    buildyVoice: s.buildyVoice,
     hourlyCallCap: s.hourlyCallCap,
     captureNoticeAccepted: s.captureNoticeAccepted,
     ...overrides,

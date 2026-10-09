@@ -91,6 +91,8 @@ export const nonSecretSettingsSchema = z.object({
   baseUrl: z.string().max(2000),
   autoAnalysisIntervalSeconds: z.number().int().min(5).max(3600),
   elevenLabsVoiceId: z.string().max(200),
+  // Defaulted so callers built before the voice choice existed still validate.
+  buildyVoice: z.enum(['bella', 'puck']).default('bella'),
   hourlyCallCap: z.number().int().min(20).max(600),
   // One-time privacy-disclosure flag. Defaulted so callers built before the
   // flag existed still validate; missing means "not accepted yet".

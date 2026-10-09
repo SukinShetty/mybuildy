@@ -29,14 +29,18 @@ function devCspPlugin(): Plugin {
 // so no image binaries are needed. onnxruntime-node stays external (native).
 const BUNDLED_VOICE_DEPS = ['kokoro-js', '@huggingface/transformers', 'phonemizer']
 
-// kokoro-js reads a voice from ../voices/<id>.bin next to its code: copy Bella's.
+// kokoro-js reads a voice from ../voices/<id>.bin next to its code: copy
+// Buildy's two (Bella and Puck, ~0.5 MB each; the other voices don't ship).
+const BUILDY_KOKORO_VOICES = ['af_bella', 'am_puck']
 function copyBuildyVoicePlugin(): Plugin {
   return {
     name: 'mybuildy-copy-buildy-voice',
     apply: 'build',
     writeBundle() {
       mkdirSync(resolve(__dirname, 'out/voices'), { recursive: true })
-      copyFileSync(resolve(__dirname, 'node_modules/kokoro-js/voices/af_bella.bin'), resolve(__dirname, 'out/voices/af_bella.bin'))
+      for (const voice of BUILDY_KOKORO_VOICES) {
+        copyFileSync(resolve(__dirname, `node_modules/kokoro-js/voices/${voice}.bin`), resolve(__dirname, `out/voices/${voice}.bin`))
+      }
     }
   }
 }

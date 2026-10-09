@@ -18,7 +18,7 @@ import type {
 } from '../renderer/src/types'
 import {
   emptyProjectMemory, defaultNonSecretSettings,
-  HOURLY_CALL_CAP_MIN, HOURLY_CALL_CAP_MAX,
+  HOURLY_CALL_CAP_MIN, HOURLY_CALL_CAP_MAX, isBuildyVoice,
 } from '../renderer/src/types'
 import { getSecret, hasSecret, secretKeyForProvider, getAllRedacted, getCustomKeyOrigin } from './secure-store'
 
@@ -146,6 +146,7 @@ export async function loadNonSecretSettings(): Promise<NonSecretSettings> {
       baseUrl: String(raw.baseUrl ?? ''),
       autoAnalysisIntervalSeconds: Number(raw.autoAnalysisIntervalSeconds ?? d.autoAnalysisIntervalSeconds),
       elevenLabsVoiceId: String(raw.elevenLabsVoiceId ?? d.elevenLabsVoiceId),
+      buildyVoice: isBuildyVoice(raw.buildyVoice) ? raw.buildyVoice : d.buildyVoice,
       hourlyCallCap,
       captureNoticeAccepted: raw.captureNoticeAccepted === true,
     }
@@ -206,6 +207,7 @@ export async function saveNonSecretSettings(s: NonSecretSettings): Promise<void>
     baseUrl: s.baseUrl,
     autoAnalysisIntervalSeconds: s.autoAnalysisIntervalSeconds,
     elevenLabsVoiceId: s.elevenLabsVoiceId,
+    buildyVoice: s.buildyVoice,
     hourlyCallCap: s.hourlyCallCap,
     captureNoticeAccepted: s.captureNoticeAccepted || onDisk.captureNoticeAccepted,
   }
