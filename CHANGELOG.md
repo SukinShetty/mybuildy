@@ -4,6 +4,29 @@ All notable changes to MyBuildy are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Changes on `main` since the v0.1.0 installers were built (commit `4292055`, "frame-by-frame animations"). They are not in the 0.1.0 downloads yet.
+
+### Added
+
+- **Buildy's own voice** — without an ElevenLabs key, MyBuildy now speaks with Buildy's own voice: Kokoro 82M (fp16), voice Bella (`af_bella`), bundled in the installer and running on your computer, free, nothing sent anywhere. The voice order is ElevenLabs when you saved a key, otherwise Bella, and the computer's own voice only if Bella can't run. Settings → Voice shows "Buildy's voice: Bella" as the default, with ElevenLabs (your own key) optional. Bella speaks one sentence at a time and makes the next sentences while one plays. The model is downloaded from a pinned Hugging Face revision and SHA-256-checked (`npm run fetch:voice`), and loads once in a separate utility process, never in a window. (#2)
+
+### Fixed
+
+- **The robot and the Guidance tab are one watch** — Analyze Now in the Guidance tab used to run its own capture and analysis while the robot stayed idle and still asked for a window. Now there is one watch: choosing a window in either place sets it for both; Analyze Now runs the watch's own analysis (even when paused or the screen is unchanged) and the robot shows it is working; the result shows on the robot, in its panel and in the Guidance tab; Auto in the Guidance tab is the robot's Pause/Resume; Stop from either place ends the watch everywhere. The robot never offers a prompt that was already pasted.
+- **Analyze Now is never lost** — pressing Analyze Now while MyBuildy was already looking (for example right after Paste into terminal) answered "already running" and could then be dropped with no analysis. Now that look's result answers it, or a fresh look runs straight after; the Guidance tab says MyBuildy is already looking meanwhile.
+- **The window picker lists only real windows, coding apps first** — the list is fresh each time a picker opens and refreshes every 3 seconds while open, so closed windows don't show; MyBuildy's own windows and overlays (such as the NVIDIA GeForce Overlay) are left out; terminals and coding apps (PowerShell, Windows Terminal, Command Prompt, Terminal, iTerm, VS Code, Cursor, the Claude app) come first.
+- **Bring a hidden robot back from the taskbar or Dock** — on Windows, Hide now minimizes the robot so MyBuildy's taskbar button stays and clicking it brings the robot back; opening MyBuildy again from the Start menu, Applications or the Dock also brings it back. Hide says where to find him. Ctrl+Alt+B (Cmd+Option+B on Mac) still works.
+- **What a first-time user ran into** — after Paste, the robot keeps saying "Pasted — now press Enter in your terminal" instead of "Waiting for Claude Code to finish"; when Paste is off, the robot says to copy from the panel and the panel says why Paste is off ("Use Copy instead"); a long analysis is no longer cut off (answer limit raised from 1500 to 4000 tokens), and raw JSON is never shown.
+- **No silent voice switch** — when an ElevenLabs request failed (bad key, used-up credits, missing permission, voice not found, network), MyBuildy silently switched to the computer's default voice. Now the robot and Settings say which voice failed, which one is speaking instead and why, with an Open Settings button; the reason (never the key or the text) goes to the diagnostic log. A watch ending mid-sentence no longer cuts ElevenLabs off. The computer's voice is a natural female voice (Zira on Windows, Samantha on Mac), not Microsoft David unless it is the only one.
+- **The robot's "!" badge** — on a slow machine, the robot's first watch status could arrive late and clear a "!" that a hand-off or analysis had already set. It no longer does.
+
+### Changed
+
+- **Mac install steps** — the README and Mac testing guide drop the Open Anyway / right-click / `xattr` steps, since the DMGs are Developer ID signed and notarized. Windows SmartScreen steps are unchanged.
+- **Mac signing with the voice model inside** — the signed Mac build now signs correctly with the bundled voice model (`isbinaryfile` override, model folder left out of per-file signing), and the signed-build workflow launches the apps, including the Intel app under Rosetta, to prove the voice loads.
+
 ## [0.1.0] — 2026-09-23
 
 First public release, source-available under the PolyForm Shield License 1.0.0. Windows installer and macOS DMGs (Apple Silicon and Intel) via GitHub Releases; Linux runs from source (untested).
