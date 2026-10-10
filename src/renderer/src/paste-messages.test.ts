@@ -21,8 +21,18 @@ describe('paste wording', () => {
     expect(pasteFailureMessage({ sent: false, reason: 'window_not_in_front' }, true)).toContain('press Cmd+V')
   })
 
+  it('the picked window closed, or is no longer the same window: says so, nothing was pasted, prompt on the clipboard', () => {
+    expect(pasteFailureMessage({ sent: false, reason: 'window_gone' }, false)).toBe(
+      'The window you picked has closed, so nothing was pasted. Pick your terminal again. The prompt is on your clipboard: press Ctrl+V in your terminal, read it, then press Enter.'
+    )
+    expect(pasteFailureMessage({ sent: false, reason: 'window_changed' }, false)).toBe(
+      "MyBuildy couldn't confirm this is the window you picked, so nothing was pasted. Pick your terminal again. The prompt is on your clipboard: press Ctrl+V in your terminal, read it, then press Enter."
+    )
+    expect(pasteFailureMessage({ sent: false, reason: 'window_gone' }, true)).toContain('press Cmd+V')
+  })
+
   it('never tells the user the app will press Enter for them', () => {
-    for (const reason of ['stale', 'not_eligible', 'window_not_in_front', 'timeout', 'unknown'] as const) {
+    for (const reason of ['stale', 'not_eligible', 'window_not_in_front', 'window_gone', 'window_changed', 'timeout', 'unknown'] as const) {
       const text = pasteFailureMessage({ sent: false, reason }, false)
       expect(text).not.toMatch(/Ctrl\+V then Enter|and press Enter for you|sends? it for you/i)
     }

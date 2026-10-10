@@ -326,11 +326,16 @@ export function startWatching(
   logWatchEvent('watch-started', { session: mySession, source: sourceId }, { title: windowName })
   // Record which process owns the window, so a later missing id can be
   // confirmed as the SAME window (minimized) rather than lost (window-presence.ts).
-  void probeWindowPresence(sourceId).then((presence) => {
-    if (!continuity || continuity.sourceId !== sourceId || isStaleSession(mySession, currentSession)) return
+  // The same pick-time owner is what "Paste into terminal" checks on Windows:
+  // the paste goes only to this exact window (handle + owner), never to a
+  // window that merely has the same title (paste-target.ts).
+  const ownerProbe = probeWindowPresence(sourceId).then((presence) => {
+    if (!continuity || continuity.sourceId !== sourceId || isStaleSession(mySession, currentSession)) return null
     if (presence?.exists) continuity.ownerPid = presence.ownerPid
     logWatchEvent('watch-owner', { session: mySession, known: continuity.ownerPid !== null })
-  })
+    return continuity.ownerPid
+  }, () => null)
+  pickTimeOwner = { sourceId, probe: ownerProbe }
   continuityTimer = setInterval(() => {
     void pollWatchContinuity(companionWindow, mySession)
   }, CONTINUITY_POLL_MS)
@@ -1056,6 +1061,7 @@ function clearStaleState(): void {
   if (loopTimer) { clearTimeout(loopTimer); loopTimer = null }
   if (continuityTimer) { clearInterval(continuityTimer); continuityTimer = null }
   continuity = null
+  pickTimeOwner = null
   continuityPollBusy = false
   stopTurnPoll()
   turnDetector.reset()
@@ -1304,6 +1310,20 @@ export async function handleSendPromptRequest(promptId: string): Promise<SendPro
   return result
 }
 
+/** The pick-time owner probe of the current watch (startWatching). */
+let pickTimeOwner: { sourceId: string; probe: Promise<number | null> } | null = null
+
+/**
+ * The process that owned the watched window when it was picked, or null when
+ * unknown (not Windows, the probe failed, or another window is watched now).
+ */
+async function pickTimeOwnerPid(sourceId: string | null): Promise<number | null> {
+  if (!sourceId) return null
+  if (continuity && continuity.sourceId === sourceId && continuity.ownerPid !== null) return continuity.ownerPid
+  if (!pickTimeOwner || pickTimeOwner.sourceId !== sourceId) return null
+  return pickTimeOwner.probe
+}
+
 async function sendPromptRequest(promptId: string): Promise<SendPromptResult> {
   console.log('[Send] request received')
 
@@ -1328,9 +1348,18 @@ async function sendPromptRequest(promptId: string): Promise<SendPromptResult> {
       return { sent: false, reason: 'not_eligible', detail: eligibility.sendBlockedReason }
     }
 
+    // Windows: the owner of the picked window, recorded when it was picked
+    // (the probe normally finished long ago; await it in case it hasn't).
+    const ownerPid = await pickTimeOwnerPid(binding.sourceId)
+    const changedAfterOwner = sendAuthorizer.changed(binding, currentSendContext())
+    if (changedAfterOwner) {
+      console.log(`[Send] aborted: ${changedAfterOwner}`)
+      return { sent: false, reason: 'stale', detail: changedAfterOwner }
+    }
+
     const sendPromise = executeSend(
       binding.promptText,
-      { title: watchedWindowName || '', sourceId: binding.sourceId },
+      { title: watchedWindowName || '', sourceId: binding.sourceId, ownerPid },
       () => sendAuthorizer.changed(binding, currentSendContext()),
     )
     void pushSendEligibility() // in-flight now → button disables while pasting
