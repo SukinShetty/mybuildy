@@ -59,3 +59,16 @@ describe('Anthropic model-list failures and recovery', () => {
     expect(await fetchModelsForProvider(s)).toEqual({ models: [], error: null })
   })
 })
+
+
+it('does not cache an empty successful list and can recover on retry', async () => {
+  vi.resetModules()
+  const fetch = vi.fn().mockResolvedValueOnce(new Response('{"data":[]}'))
+    .mockResolvedValueOnce(new Response('{"data":[{"id":"synthetic-new-model"}]}'))
+  vi.stubGlobal('fetch', fetch)
+  const { fetchModelsForProvider } = await import('./model-fetch')
+  const settings = { provider: 'anthropic', baseUrl: '', apiKey: 'synthetic-empty-list' } as AppSettings
+  expect((await fetchModelsForProvider(settings)).models).toEqual([])
+  expect((await fetchModelsForProvider(settings)).models[0].id).toBe('synthetic-new-model')
+  expect(fetch).toHaveBeenCalledTimes(2)
+})

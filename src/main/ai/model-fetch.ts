@@ -96,7 +96,8 @@ export async function fetchModelsForProvider(settings: AppSettings): Promise<Mod
   }
   try {
     const models = applySuggestedTag(settings.provider, await fetchRawModels(settings))
-    cache.set(cacheKey, { at: Date.now(), models })
+    // An empty list may be transient; Retry must perform a fresh request.
+    if (models.length > 0) cache.set(cacheKey, { at: Date.now(), models })
     return { models, error: null }
   } catch (error) {
     const diagnostic = modelListDiagnostic(error)
