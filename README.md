@@ -126,6 +126,8 @@ A local model runs on your computer, so screenshots and project memory never lea
 3. On **Your model**, pick a model. The ones that can read images are listed first and marked **Can read images**; MyBuildy checks the first one automatically. If none can read images, the setup tells you to download one.
 4. Watching starts only once the model passes the **vision check**. The first check can take a minute while the model loads.
 
+The 0.1.0 installers were built before this option was added: their setup still asks for a cloud API key. With them, finish setup, then switch as below.
+
 Already set up with a key? Open **Settings → Advanced: more providers and local models**, choose **Ollama** or **LM Studio**, leave the Base URL empty for the default address (or enter the one your server uses), and pick your model.
 
 ---
