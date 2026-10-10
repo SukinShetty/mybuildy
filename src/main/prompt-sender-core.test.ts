@@ -172,27 +172,31 @@ describe('detectDestructivePrompt — normal build prompts pass', () => {
   })
 })
 
-describe('buildSendCommand — no user content in the command string', () => {
+describe('buildSendCommand — the exact picked window, no user content in the command string', () => {
   const prompt = 'MYBUILDY_SECRET_PROMPT: build the /dashboard route with a table'
-  const title = 'MYBUILDY SECRET WINDOW TITLE — claude in ~/my-app'
+  const target = { hwnd: '987654', ownerPid: 4321 }
 
-  it('never interpolates the prompt text or the window title', () => {
-    const cmd = buildSendCommand(prompt, title)
+  it('never interpolates the prompt text, the window handle or the owner', () => {
+    const cmd = buildSendCommand(prompt, target)
     const full = [cmd.exe, ...cmd.args].join(' ')
     expect(full).not.toContain(prompt)
     expect(full).not.toContain('MYBUILDY_SECRET_PROMPT')
-    expect(full).not.toContain(title)
-    expect(full).not.toContain('SECRET WINDOW TITLE')
+    expect(full).not.toContain('987654')
+    expect(full).not.toContain('4321')
   })
 
-  it('passes the title ONLY via the MYBUILDY_TARGET_TITLE environment variable', () => {
-    const cmd = buildSendCommand(prompt, title)
-    expect(cmd.env.MYBUILDY_TARGET_TITLE).toBe(title)
-    expect(POWERSHELL_SEND_SCRIPT).toContain('$env:MYBUILDY_TARGET_TITLE')
+  it('identifies the window by handle + owning process (env only) — never by title', () => {
+    const cmd = buildSendCommand(prompt, target)
+    expect(cmd.env).toEqual({ MYBUILDY_TARGET_HWND: '987654', MYBUILDY_TARGET_PID: '4321' })
+    expect(POWERSHELL_SEND_SCRIPT).toContain('$env:MYBUILDY_TARGET_HWND')
+    expect(POWERSHELL_SEND_SCRIPT).toContain('$env:MYBUILDY_TARGET_PID')
+    expect(POWERSHELL_SEND_SCRIPT).not.toContain('MYBUILDY_TARGET_TITLE')
+    expect(POWERSHELL_SEND_SCRIPT).not.toContain('AppActivate') // activates "a window with this title"
+    expect(POWERSHELL_SEND_SCRIPT).not.toContain('GetWindowText') // titles are not identity
   })
 
   it('uses the fixed powershell invocation and pastes only — never presses Enter', () => {
-    const cmd = buildSendCommand(prompt, title)
+    const cmd = buildSendCommand(prompt, target)
     expect(cmd.exe).toBe('powershell.exe')
     expect(cmd.args.slice(0, 3)).toEqual(['-NoProfile', '-NonInteractive', '-Command'])
     expect(cmd.args[3]).toBe(POWERSHELL_SEND_SCRIPT)
@@ -200,18 +204,20 @@ describe('buildSendCommand — no user content in the command string', () => {
     expect(POWERSHELL_SEND_SCRIPT).not.toMatch(/ENTER|~|\{RETURN\}/i)
   })
 
-  it('checks the foreground window IMMEDIATELY before the paste keystroke', () => {
+  it('re-checks the exact window IMMEDIATELY before the paste keystroke: still exists, same owner, and is the foreground window', () => {
     const s = POWERSHELL_SEND_SCRIPT
     const loadForms = s.indexOf('Add-Type -AssemblyName System.Windows.Forms')
-    const activate = s.indexOf('AppActivate(')
-    const check = s.lastIndexOf('exit 2')
+    const activate = s.indexOf('::Activate(')
     const paste = s.indexOf("SendWait('^v')")
-    // The slow assembly load happens BEFORE activation, not between the check and the paste…
     expect(loadForms).toBeGreaterThan(-1)
-    expect(loadForms).toBeLessThan(activate)
-    // …and the only thing between the last foreground check and the paste is a line break.
-    expect(check).toBeLessThan(paste)
-    expect(s.slice(check + 'exit 2 }'.length, paste).replace(/\[System\.Windows\.Forms\.SendKeys\]::$/, '').trim()).toBe('')
+    expect(loadForms).toBeLessThan(activate) // slow work before activation
+    const finalChecks = s.slice(activate, paste)
+    expect(finalChecks).toMatch(/IsWindow\(\$h\)\)\) \{ exit 4 \}/)
+    expect(finalChecks).toMatch(/OwnerPid\(\$h\) -ne \$expectedPid\) \{ exit 8 \}/)
+    expect(finalChecks).toMatch(/GetForegroundWindow\(\)\.ToInt64\(\) -ne \$h\.ToInt64\(\)\) \{ exit 2 \}/)
+    // Nothing but those checks between the last one and the keystroke.
+    const lastCheck = s.lastIndexOf('{ exit', paste)
+    expect(s.slice(s.indexOf('}', lastCheck) + 1, paste).replace(/\[System\.Windows\.Forms\.SendKeys\]::$/, '').trim()).toBe('')
   })
 })
 
@@ -263,6 +269,14 @@ describe('buildMacSendCommand — no user content in the command string', () => 
     expect(MAC_SEND_SCRIPT).not.toMatch(/keystroke\(\s*['"]\\r/)
     // The not-frontmost exit comes BEFORE any keystroke.
     expect(MAC_SEND_SCRIPT.indexOf('$.exit(2)')).toBeLessThan(MAC_SEND_SCRIPT.indexOf('keystroke('))
+  })
+
+  it('checks the front WINDOW is the picked window number (not just its app) right before Cmd+V', () => {
+    const s = MAC_SEND_SCRIPT
+    const keystroke = s.indexOf("keystroke('v'")
+    const lastGuard = s.lastIndexOf('frontWindowNumber(', keystroke)
+    expect(lastGuard).toBeGreaterThan(-1)
+    expect(s.slice(lastGuard, keystroke)).toMatch(/!== windowId[^\n]*\$\.exit\(2\)/)
   })
 
   it('is syntactically valid JavaScript (osascript -l JavaScript would reject a parse error)', () => {
@@ -332,7 +346,7 @@ describe('performSend', () => {
 
   it('macOS: maps the remaining exit codes to distinct reasons', async () => {
     const cases: Array<[number | null, string]> = [
-      [4, 'window_not_in_front'],       // window no longer in the window list
+      [4, 'window_gone'],               // window no longer in the window list
       [5, 'automation_permission'],     // System Events automation denied
       [6, 'accessibility_permission'],  // keystroke refused by macOS
       [null, 'timeout'],
@@ -352,26 +366,46 @@ describe('performSend', () => {
     expect(calls.clipboard).toEqual([SANITIZED])
   })
 
-  it('Windows path is unchanged: powershell with the title in env, no Accessibility check', async () => {
+  const winTarget = { title: 'claude', sourceId: 'window:1001:0', ownerPid: 500 }
+
+  it('Windows: powershell with the picked window handle and owner in env — never the title; no Accessibility check', async () => {
     let trustedChecks = 0
     const { deps, calls } = fakeDeps({
       platform: 'win32',
       isAccessibilityTrusted: () => { trustedChecks++; return false },
     })
-    expect(await performSend(PROMPT, { title: 'claude', sourceId: 'window:1:0' }, deps)).toEqual({ sent: true })
+    expect(await performSend(PROMPT, winTarget, deps)).toEqual({ sent: true })
     expect(trustedChecks).toBe(0)
-    expect(calls.commands[0]).toEqual(buildSendCommand('', 'claude'))
+    expect(calls.commands[0].exe).toBe('powershell.exe')
+    expect(calls.commands[0].env).toEqual({ MYBUILDY_TARGET_HWND: '1001', MYBUILDY_TARGET_PID: '500' })
+    expect(JSON.stringify(calls.commands[0])).not.toContain('claude')
     expect(calls.logs).toContain('[Send] keystrokes delivered (exit 0)')
   })
 
   it('Windows: exit 2 and timeout keep their original reasons and log lines', async () => {
     const notFront = fakeDeps({ platform: 'win32', exit: 2 })
-    expect(await performSend(PROMPT, { title: 'claude', sourceId: null }, notFront.deps))
+    expect(await performSend(PROMPT, winTarget, notFront.deps))
       .toEqual({ sent: false, reason: 'window_not_in_front' })
     const timedOut = fakeDeps({ platform: 'win32', exit: null })
-    expect(await performSend(PROMPT, { title: 'claude', sourceId: null }, timedOut.deps))
+    expect(await performSend(PROMPT, winTarget, timedOut.deps))
       .toEqual({ sent: false, reason: 'timeout' })
     expect(timedOut.calls.logs).toContain('[Send] PowerShell timed out — killed, text left on clipboard')
+  })
+
+  it('Windows: the picked window closed (exit 4) or is no longer the same window (exit 8) — distinct reasons', async () => {
+    const gone = fakeDeps({ platform: 'win32', exit: 4 })
+    expect(await performSend(PROMPT, winTarget, gone.deps)).toEqual({ sent: false, reason: 'window_gone' })
+    const changed = fakeDeps({ platform: 'win32', exit: 8 })
+    expect(await performSend(PROMPT, winTarget, changed.deps)).toEqual({ sent: false, reason: 'window_changed' })
+  })
+
+  it('Windows: without the pick-time owner, or without a window handle, no script runs and nothing is pasted', async () => {
+    for (const target of [{ ...winTarget, ownerPid: null }, { ...winTarget, sourceId: null }, { ...winTarget, sourceId: 'screen:0:0' }]) {
+      const { deps, calls } = fakeDeps({ platform: 'win32' })
+      expect(await performSend(PROMPT, target, deps)).toMatchObject({ sent: false, reason: 'window_changed' })
+      expect(calls.commands).toHaveLength(0)
+      expect(calls.clipboard).toEqual([SANITIZED]) // left for a manual paste
+    }
   })
 
   it('rejects a prompt that is empty after sanitizing, touching nothing', async () => {

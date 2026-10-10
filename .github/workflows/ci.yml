@@ -67,6 +67,11 @@ jobs:
       - name: E2E (dev build)
         run: npm run test:e2e
 
+      # Real Windows windows and keystrokes: two windows with the same title,
+      # and Paste into terminal must reach only the picked one (or nothing).
+      - name: Paste goes only to the picked window (real Windows)
+        run: npx vitest run src/main/paste-target.windows.test.ts
+
       - name: Package Windows app
         run: npx electron-builder --win nsis --x64 --publish never
 
