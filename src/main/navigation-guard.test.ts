@@ -29,9 +29,20 @@ describe('isSafeExternalUrl', () => {
 })
 
 describe('isAllowedAppNavigation', () => {
-  it('allows file:// URLs (packaged renderer bundle)', () => {
-    expect(isAllowedAppNavigation('file:///C:/app/resources/renderer/index.html', undefined)).toBe(true)
-    expect(isAllowedAppNavigation('file:///C:/app/renderer/index.html?companion=true', null)).toBe(true)
+  it('allows only the specified bundled renderer document', () => {
+    expect(isAllowedAppNavigation('file:///C:/app/resources/renderer/index.html', undefined, 'file:///C:/app/resources/renderer/index.html')).toBe(true)
+    expect(isAllowedAppNavigation('file:///C:/app/renderer/index.html?companion=true', null, 'file:///C:/app/renderer/index.html')).toBe(true)
+  })
+
+  it('rejects arbitrary files, sibling documents, traversal and non-file bundled URLs', () => {
+    const bundle = 'file:///app/renderer/index.html'
+    for (const target of ['file:///tmp/hostile.html', 'file:///app/renderer/other.html', 'file:///app/renderer/../hostile.html', 'file://other-host/app/renderer/index.html']) {
+      expect(isAllowedAppNavigation(target, null, bundle)).toBe(false)
+    }
+    expect(isAllowedAppNavigation(bundle)).toBe(false)
+    expect(isAllowedAppNavigation(bundle, null, 'https://example.com/index.html')).toBe(false)
+    expect(isAllowedAppNavigation(`${bundle}?guidance=true#view`, null, bundle)).toBe(true)
+    expect(isAllowedAppNavigation('data:text/html,hello', 'file:///tmp/')).toBe(false)
   })
 
   it('allows the dev server origin when one is configured', () => {
@@ -56,7 +67,7 @@ describe('isAllowedAppNavigation', () => {
 
   it('tolerates a malformed dev server URL by denying http', () => {
     expect(isAllowedAppNavigation('http://localhost:5173/', 'not a url')).toBe(false)
-    expect(isAllowedAppNavigation('file:///C:/app/index.html', 'not a url')).toBe(true)
+    expect(isAllowedAppNavigation('file:///C:/app/index.html', 'not a url')).toBe(false)
   })
 })
 

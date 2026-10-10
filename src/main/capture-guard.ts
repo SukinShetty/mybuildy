@@ -72,7 +72,7 @@ export interface WindowPresence {
   ownerPid: number | null
 }
 
-export type LostReason = 'missing-too-long' | 'returned-with-new-title' | 'closed'
+export type LostReason = 'missing-too-long' | 'returned-with-new-title' | 'closed' | 'continuity-gap'
 
 export type ContinuityEvent =
   | { kind: 'none' }
@@ -218,4 +218,21 @@ export async function pollContinuityWithPresence(
   watch.state = 'missing'
   watch.missingSinceMs = nowMs
   return { kind: 'still-open', minimized: presence!.minimized }
+}
+
+
+/** Launch-safe policy: any observed source-list gap ends the watch. A PID or
+ * title match after a gap cannot prove that a recycled window id is the same
+ * selected window. The user must explicitly select a window again. */
+export function pollStrictContinuity(
+  watch: WatchContinuity,
+  sources: readonly { id: string; name: string }[],
+  nowMs: number,
+): ContinuityEvent {
+  if (watch.state === 'lost') return { kind: 'none' }
+  if (watch.state === 'missing' || !findWatchedSource(sources, watch.sourceId)) {
+    watch.state = 'lost'
+    return { kind: 'lost', reason: 'continuity-gap' }
+  }
+  return pollContinuity(watch, sources, nowMs)
 }

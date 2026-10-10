@@ -62,8 +62,10 @@ export async function isWatchedWindowPresent(watchedId: string | null): Promise<
 export async function executeSend(
   promptText: string,
   target: SendTarget,
-  bindingChanged?: () => string | null
+  bindingChanged?: () => string | null,
+  signal?: AbortSignal,
 ): Promise<SendPromptResult> {
+  if (signal?.aborted) return { sent: false, reason: 'stale', detail: 'Watching stopped before dispatch.' }
   if (sendInFlight) {
     console.log('[Send] rejected: a send is already in flight')
     return { sent: false, reason: 'not_eligible' }
@@ -81,7 +83,7 @@ export async function executeSend(
         accessibilityPromptShown = true
         systemPreferences.isTrustedAccessibilityClient(true)
       },
-      runScript: runSendScript,
+      runScript: (command) => runSendScript(command, signal),
       log: (message) => console.log(message),
       bindingChanged,
     })
@@ -97,9 +99,10 @@ export async function executeSend(
  * Spawn a fixed send script and resolve with its exit code, or null on timeout
  * (the process is killed after the platform's timeout).
  */
-function runSendScript(command: SendCommand): Promise<SendExit> {
+export function runSendScript(command: SendCommand, signal?: AbortSignal): Promise<SendExit> {
   const timeoutMs = process.platform === 'darwin' ? MAC_SEND_TIMEOUT_MS : SEND_TIMEOUT_MS
 
+  if (signal?.aborted) return Promise.resolve('cancelled')
   return new Promise((resolve) => {
     const child = spawn(command.exe, command.args, {
       env: { ...process.env, ...command.env },
@@ -108,25 +111,27 @@ function runSendScript(command: SendCommand): Promise<SendExit> {
     })
 
     let settled = false
-    const timer = setTimeout(() => {
-      if (settled) return
-      settled = true
-      try { child.kill() } catch { /* already gone */ }
-      resolve(null)
-    }, timeoutMs)
-
-    child.on('exit', (code) => {
+    const finish = (exit: SendExit): void => {
       if (settled) return
       settled = true
       clearTimeout(timer)
-      resolve(code)
-    })
+      signal?.removeEventListener('abort', cancel)
+      resolve(exit)
+    }
+    const kill = (): void => { try { child.kill() } catch { /* outcome remains uncertain */ } }
+    const cancel = (): void => {
+      if (settled) return
+      // The OS may already have delivered Ctrl/Cmd+V. Never claim it was undone.
+      finish('cancelled')
+      kill()
+    }
+    const timer = setTimeout(() => { if (!settled) { finish(null); kill() } }, timeoutMs)
+    child.on('exit', (code) => finish(code))
     child.on('error', (error) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
       console.error('[Send] spawn error:', error)
-      resolve(1)
+      finish(1)
     })
+    signal?.addEventListener('abort', cancel, { once: true })
+    if (signal?.aborted) cancel()
   })
 }

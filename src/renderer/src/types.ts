@@ -349,6 +349,8 @@ export const PASTE_SUCCESS_MESSAGE = 'Pasted into your terminal. Read it, then p
 export function pasteFailureMessage(result: SendPromptResult, isMac: boolean): string {
   const pasteKey = isMac ? 'Cmd+V' : 'Ctrl+V'
   switch (result.reason) {
+    case 'cancelled':
+      return 'Paste was cancelled, but the text may already have reached your terminal. Check the terminal before pasting or running anything again.'
     case 'stale':
       return `${result.detail || 'The prompt changed before it could be pasted.'} Nothing was pasted.`
     case 'not_eligible':
@@ -510,6 +512,7 @@ export type SendFailureReason =
   | 'timeout'
   | 'not_eligible'
   | 'stale'
+  | 'cancelled'                // native dispatch cancelled; delivery may already have happened
   | 'unknown'
   | 'accessibility_permission'  // macOS: MyBuildy may not post keystrokes (Accessibility)
   | 'automation_permission'     // macOS: MyBuildy may not control System Events (Automation)

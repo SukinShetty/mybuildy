@@ -14,6 +14,7 @@
 
 import {
   mkdirSync, readFileSync, writeFileSync, existsSync, cpSync, copyFileSync, rmSync,
+  openSync, closeSync, fsyncSync, renameSync, readdirSync,
 } from 'fs'
 import { join, dirname, resolve, basename } from 'path'
 import { randomUUID } from 'crypto'
@@ -125,19 +126,100 @@ export function deriveProjectNameFromGoal(goalText: string): string {
 
 // ─── projects.json I/O ────────────────────────────────────────────────────────
 
+function projectsRecoveryError(message: string): Error {
+  const error = new Error(message)
+  error.name = 'ProjectsRecoveryError'
+  return error
+}
+
+export function isProjectsRecoveryError(error: unknown): error is Error {
+  return error instanceof Error && error.name === 'ProjectsRecoveryError'
+}
+
+function parseProjectsFile(text: string): ProjectsFile {
+  const raw = JSON.parse(text) as ProjectsFile
+  if (!raw || !Array.isArray(raw.projects) || raw.projects.length === 0 ||
+      typeof raw.activeProjectId !== 'string' || typeof raw.migratedAt !== 'string') {
+    throw new Error('Invalid project registry')
+  }
+  const ids = new Set<string>()
+  for (const project of raw.projects) {
+    if (!project || typeof project.id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(project.id) ||
+        ids.has(project.id) || typeof project.name !== 'string' || typeof project.goalText !== 'string' ||
+        typeof project.createdAt !== 'string' || typeof project.lastActiveAt !== 'string') {
+      throw new Error('Invalid project record')
+    }
+    ids.add(project.id)
+  }
+  if (!ids.has(raw.activeProjectId)) throw new Error('Active project is missing')
+  return raw
+}
+
+export function projectsBackupPath(userDataDir: string): string {
+  return join(userDataDir, 'projects.json.backup')
+}
+
+export function readProjectsBackup(userDataDir: string): ProjectsFile | null {
+  try { return parseProjectsFile(readFileSync(projectsBackupPath(userDataDir), 'utf-8')) }
+  catch { return null }
+}
+
+/** Missing is different from unreadable/corrupt: never silently reset an existing registry. */
 export function loadProjectsFile(userDataDir: string): ProjectsFile | null {
+  let text: string
+  try { text = readFileSync(projectsFilePath(userDataDir), 'utf-8') }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw projectsRecoveryError('MyBuildy cannot read the project list. No project was opened.')
+  }
+  try { return parseProjectsFile(text) }
+  catch { throw projectsRecoveryError('The saved project list is damaged. No project was opened.') }
+}
+
+/** Write a synced sibling then rename; an interrupted write cannot truncate the live file. */
+function atomicWrite(filePath: string, content: string): void {
+  const temp = filePath + '.' + randomUUID() + '.tmp'
+  let fd: number | null = null
   try {
-    const raw = JSON.parse(readFileSync(projectsFilePath(userDataDir), 'utf-8')) as ProjectsFile
-    if (!Array.isArray(raw.projects) || typeof raw.activeProjectId !== 'string') return null
-    return raw
-  } catch {
-    return null
+    fd = openSync(temp, 'wx', 0o600)
+    writeFileSync(fd, content, 'utf-8')
+    fsyncSync(fd)
+    closeSync(fd)
+    fd = null
+    renameSync(temp, filePath)
+  } finally {
+    if (fd !== null) closeSync(fd)
+    rmSync(temp, { force: true })
   }
 }
 
+/** Preserve exact damaged bytes before any explicit recovery operation. */
+export function preserveDamagedProjectsFile(userDataDir: string): string | null {
+  const path = projectsFilePath(userDataDir)
+  if (!existsSync(path)) return null
+  const copy = path + '.damaged-' + randomUUID()
+  // Random destination; refuse collision rather than overwrite an earlier recovery copy.
+  copyFileSync(path, copy, 1)
+  return copy
+}
+
 export function saveProjectsFile(userDataDir: string, file: ProjectsFile): void {
+  const serialized = JSON.stringify(file, null, 2)
+  parseProjectsFile(serialized) // validate before touching the existing registry or backup
   mkdirSync(userDataDir, { recursive: true })
-  writeFileSync(projectsFilePath(userDataDir), JSON.stringify(file, null, 2), 'utf-8')
+  const previous = loadProjectsFile(userDataDir) // a corrupt primary must never poison its backup
+  const backup = JSON.stringify(previous ?? file, null, 2)
+  atomicWrite(projectsBackupPath(userDataDir), backup)
+  atomicWrite(projectsFilePath(userDataDir), serialized)
+}
+
+/** Called only after the user chooses the named backup project in the recovery dialog. */
+export function restoreProjectsBackup(userDataDir: string): ProjectsFile {
+  const backup = readProjectsBackup(userDataDir)
+  if (!backup) throw projectsRecoveryError('No readable project-list backup is available.')
+  preserveDamagedProjectsFile(userDataDir) // failure here must stop restoration
+  atomicWrite(projectsFilePath(userDataDir), JSON.stringify(backup, null, 2))
+  return backup
 }
 
 // ─── Per-project store reads ──────────────────────────────────────────────────
@@ -183,6 +265,16 @@ export function ensureProjectsInitialized(
 ): ProjectsFile {
   const existing = loadProjectsFile(userDataDir)
   if (existing) return existing // marker: migration already ran (or fresh file exists)
+  if (existsSync(projectsBackupPath(userDataDir))) {
+    throw projectsRecoveryError('The project list is missing, but a backup exists. No project was opened.')
+  }
+  // A missing registry must not strand existing namespaced stores either.
+  const storeRoot = join(userDataDir, 'mybuildy-memory')
+  if (existsSync(storeRoot) && readdirSync(storeRoot, { withFileTypes: true }).some((entry) => entry.isDirectory() && entry.name !== 'default')) {
+    throw projectsRecoveryError('The project list is missing, but project memory folders still exist. No project was opened.')
+  }
+  // Legacy/default migration is still handled below.
+
 
   const now = deps.now()
   const projects: ProjectRecord[] = []

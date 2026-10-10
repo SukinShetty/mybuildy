@@ -8,14 +8,16 @@
 //   - All speech and analysis stop on quit
 //   - Tray provides Open/Quit shortcuts but the app does NOT hide to tray by default
 
-import { app, BrowserWindow, Tray, Menu, nativeImage, shell, globalShortcut } from 'electron'
+import { app, BrowserWindow, Tray, Menu, nativeImage, shell, globalShortcut, dialog } from 'electron'
 import { join } from 'path'
+import { pathToFileURL } from 'node:url'
 import { IPC } from '../renderer/src/types'
 import { registerIpcHandlers } from './ipc-handlers'
 import { createCompanionWindow, resetCompanionPosition, setInitialRobotScale, setRobotWindowHandlers } from './companion-window'
 import { createGuidanceWindow, destroyGuidanceWindow, showLastGuidance } from './guidance-window'
 import { stopAnalysisLoop } from './analysis-loop'
 import { initProjects } from './projects'
+import { isProjectsRecoveryError, readProjectsBackup, restoreProjectsBackup, preserveDamagedProjectsFile } from './projects-core'
 import { createVoicePlayerWindow, destroyVoicePlayer, stopVoice } from './voice-player'
 import { startKokoro, stopKokoro } from './kokoro-engine'
 import { migratePlaintextSecrets } from './secure-store'
@@ -56,7 +58,7 @@ app.on('web-contents-created', (_event, contents) => {
   })
 
   const guardNavigation = (event: Electron.Event, url: string): void => {
-    if (!isAllowedAppNavigation(url, process.env['ELECTRON_RENDERER_URL'])) {
+    if (!isAllowedAppNavigation(url, app.isPackaged ? null : process.env['ELECTRON_RENDERER_URL'], pathToFileURL(join(__dirname, '../renderer/index.html')).href)) {
       event.preventDefault()
       console.warn('[Security] blocked navigation to a non-app URL')
     }
@@ -328,8 +330,42 @@ app.whenReady().then(async () => {
   // Project-scoped memory: run the one-time legacy migration (idempotent, never
   // deletes data) and activate the persisted active project BEFORE any window
   // can read memory. Also initialises the Nemp layer for that project.
-  // Non-fatal if it can't load.
-  await initProjects().catch((e) => console.error('[Projects] init failed:', e))
+  // Never start windows/watchers against a fallback project after a registry failure.
+  try {
+    await initProjects()
+  } catch (error) {
+    console.error('[Projects] init failed:', error)
+    const dataDir = app.getPath('userData')
+    const backup = isProjectsRecoveryError(error) ? readProjectsBackup(dataDir) : null
+    const active = backup?.projects.find((p) => p.id === backup.activeProjectId)
+    const choice = await dialog.showMessageBox({
+      type: 'error',
+      title: 'Your projects need recovery',
+      message: 'MyBuildy could not open your saved projects. Watching has not started.',
+      detail: backup && active
+        ? `You can restore the last saved project list (${backup.projects.length} projects). It will open "${active.name}". More recent list changes may be missing. Your current list will be kept as a separate recovery copy; project memory files are not deleted.`
+        : 'Your files have not been reset. No readable backup is available, or project activation failed. Quit and keep your MyBuildy data folder for recovery; do not delete it.',
+      buttons: backup && active ? ['Quit', 'Restore last saved list'] : ['Quit'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    })
+    if (choice.response !== 1 || !backup || !active) {
+      // Best-effort forensic copy, with the original left unchanged even if copying fails.
+      try { if (isProjectsRecoveryError(error)) preserveDamagedProjectsFile(dataDir) } catch { /* original remains */ }
+      app.quit()
+      return
+    }
+    try {
+      restoreProjectsBackup(dataDir)
+      await initProjects()
+    } catch (recoveryError) {
+      console.error('[Projects] recovery failed:', recoveryError)
+      dialog.showErrorBox('Project recovery did not finish', 'MyBuildy will quit without opening a project. Keep the data folder for recovery; your project memory has not been deleted.')
+      app.quit()
+      return
+    }
+  }
 
   mainWindow = createMainWindow()
   setInitialRobotScale(loadRobotScale(app.getPath('userData'))) // Small / Medium / Large, remembered

@@ -1,7 +1,7 @@
 // provider-origins.ts — main process (ELECTRON-FREE, unit-tested)
 // Where each provider's API key may be sent. Cloud providers: exactly their own
 // HTTPS origin (scheme + host + default port, no credentials in the URL).
-// Local providers: this computer only. Custom: any http(s) endpoint, but its
+// Local providers: this computer only. Custom: HTTPS remotely; HTTP only on loopback, but its
 // key is bound to the origin it was entered for (see customKeyAllowed).
 
 export const CLOUD_ORIGINS = {
@@ -49,7 +49,7 @@ export function isAllowedProviderUrl(provider: string, baseUrl: string): boolean
     case 'lmstudio':
       return isLocalHostname(u.hostname)
     case 'custom':
-      return true
+      return u.protocol === 'https:' || isLocalHostname(u.hostname)
     default:
       return false
   }
@@ -58,7 +58,7 @@ export function isAllowedProviderUrl(provider: string, baseUrl: string): boolean
 /** A stored custom key may be sent only to the exact origin it was entered for. */
 export function customKeyAllowed(boundOrigin: string | null, baseUrl: string): boolean {
   const current = originOf(baseUrl)
-  return !!boundOrigin && !!current && boundOrigin === current
+  return isAllowedProviderUrl('custom', baseUrl) && !!boundOrigin && !!current && boundOrigin === current
 }
 
 /**

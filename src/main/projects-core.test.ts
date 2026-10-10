@@ -14,6 +14,8 @@ import {
   legacyNempStoreDir,
   legacyProjectMemoryFilePath,
   loadProjectsFile,
+  readProjectsBackup,
+  restoreProjectsBackup,
   readCompletionCount,
   ensureProjectsInitialized,
   createProject,
@@ -239,13 +241,21 @@ describe('project records', () => {
     expect(switched.projects.map((p) => p.id)).toContain(project.id) // nothing lost
   })
 
-  it('a corrupt projects.json is treated as not-initialized without throwing', () => {
-    writeFileSync(join(userDataDir, 'projects.json'), 'not valid json {{{', 'utf-8')
-    expect(loadProjectsFile(userDataDir)).toBeNull()
-    // Startup recovers by re-initializing rather than crashing.
-    const file = ensureProjectsInitialized(userDataDir, makeDeps())
-    expect(file.projects.length).toBeGreaterThan(0)
-    expect(file.activeProjectId).toBeTruthy()
+  it('a corrupt projects.json blocks initialization without overwriting the damaged bytes', () => {
+    const damaged = 'not valid json {{{'
+    writeFileSync(join(userDataDir, 'projects.json'), damaged, 'utf-8')
+    expect(() => loadProjectsFile(userDataDir)).toThrow(/project/i)
+    expect(() => ensureProjectsInitialized(userDataDir, makeDeps())).toThrow(/project/i)
+    expect(readFileSync(join(userDataDir, 'projects.json'), 'utf-8')).toBe(damaged)
+  })
+
+  it('an explicit backup restore keeps the saved project identity', () => {
+    const initial = ensureProjectsInitialized(userDataDir, makeDeps())
+    renameProjectRecord(userDataDir, initial.activeProjectId, 'New name')
+    const backup = readProjectsBackup(userDataDir)!
+    writeFileSync(join(userDataDir, 'projects.json'), '{', 'utf-8')
+    expect(restoreProjectsBackup(userDataDir)).toEqual(backup)
+    expect(ensureProjectsInitialized(userDataDir, makeDeps())).toEqual(backup)
   })
 
   it('renameProjectRecord with an empty or whitespace name is a no-op', () => {
