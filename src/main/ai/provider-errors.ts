@@ -2,12 +2,15 @@
 // messages. Used by the Settings vision check AND at runtime (mascot label +
 // guidance panel) so the user always sees the same friendly wording.
 
+import { ProviderTimeoutError, CancelledError } from './fetch-with-timeout'
+
 export type ProviderErrorKind =
   | 'key-rejected'        // 401 / 403
   | 'billing'             // 402, OpenAI insufficient_quota, Anthropic low credit balance
   | 'rate-limited'        // 429
   | 'model-not-found'     // 404
-  | 'network'             // timeout / DNS / connection failures
+  | 'network'             // DNS / connection failures
+  | 'timeout'             // no complete answer in time (or a stream that stopped)
   | 'cannot-read-images'  // model rejected the image input
   | 'bad-request'         // 400 / 422 the model would not take (e.g. an unsupported parameter)
   | 'server'              // 5xx on the provider's side
@@ -22,6 +25,8 @@ export const PROVIDER_ERROR_MESSAGES = {
   rateLimited: 'Your provider asked MyBuildy to slow down. Wait a minute and try again.',
   modelNotFound: "This model isn't available on your account. Try the next recommended model.",
   network: "Can't reach your AI provider. Check your internet connection and try again.",
+  timeout: 'Your AI provider took too long to answer, so MyBuildy stopped waiting. Try again in a moment.',
+  localTimeout: "Your local model took too long to answer, so MyBuildy stopped waiting. Check that it's running, or try a smaller model.",
   cannotReadImages: "This model can't see your screen. Try the next recommended model.",
   badRequest: "This model didn't accept MyBuildy's request. Try the next recommended model.",
   server: 'Your AI provider is having trouble right now. Wait a minute and try again.',
@@ -47,7 +52,8 @@ function extractStatus(text: string): number | null {
 }
 
 const BILLING_PHRASES = ['insufficient_quota', 'credit balance is too low', 'billing_not_active', 'payment required']
-const NETWORK_PHRASES = ['timed out', 'timeout', 'fetch failed', 'econnrefused', 'enotfound', 'econnreset', 'eai_again', 'network error', 'aborterror']
+const TIMEOUT_PHRASES = ['timed out', 'timeout']
+const NETWORK_PHRASES = ['fetch failed', 'econnrefused', 'enotfound', 'econnreset', 'eai_again', 'network error', 'aborterror']
 const EMPTY_ANSWER_PHRASES = ['returned no text content', 'no response body', 'could not read (']
 const IMAGE_PHRASES = [
   'does not support image', "doesn't support image", 'image input', 'invalid_image',
@@ -92,6 +98,11 @@ export function mapProviderError(errorText: string, status?: number | null): Map
   if (IMAGE_PHRASES.some((p) => lower.includes(p))) {
     return { kind: 'cannot-read-images', message: PROVIDER_ERROR_MESSAGES.cannotReadImages }
   }
+  if (TIMEOUT_PHRASES.some((p) => lower.includes(p))) {
+    return lower.includes('local model')
+      ? { kind: 'timeout', message: PROVIDER_ERROR_MESSAGES.localTimeout }
+      : { kind: 'timeout', message: PROVIDER_ERROR_MESSAGES.timeout }
+  }
   if (NETWORK_PHRASES.some((p) => lower.includes(p))) {
     return { kind: 'network', message: PROVIDER_ERROR_MESSAGES.network }
   }
@@ -113,6 +124,7 @@ const MESSAGE_FOR_KIND: Partial<Record<ProviderErrorKind, string>> = {
   'rate-limited': PROVIDER_ERROR_MESSAGES.rateLimited,
   'model-not-found': PROVIDER_ERROR_MESSAGES.modelNotFound,
   network: PROVIDER_ERROR_MESSAGES.network,
+  timeout: PROVIDER_ERROR_MESSAGES.timeout,
   'cannot-read-images': PROVIDER_ERROR_MESSAGES.cannotReadImages,
   'bad-request': PROVIDER_ERROR_MESSAGES.badRequest,
   server: PROVIDER_ERROR_MESSAGES.server,
@@ -182,7 +194,9 @@ export async function readJson<T = unknown>(response: Response, label: string): 
   let text: string
   try {
     text = await response.text()
-  } catch {
+  } catch (error) {
+    // A timeout or Stop while the body was arriving keeps its own meaning.
+    if (error instanceof ProviderTimeoutError || error instanceof CancelledError) throw error
     throw new ProviderResponseError(label, 'BODY_UNREADABLE')
   }
   try {

@@ -93,7 +93,7 @@ export class GeminiProvider implements AIProvider {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': settings.apiKey },
         body: JSON.stringify(requestBody),
-      })
+      }, { stream: true })
 
       if (!response.ok) {
         throw await providerHttpError(`Gemini`, response)
