@@ -55,7 +55,7 @@
 
 AI coding agents in the terminal are astonishing — and they were built by developers, for developers. If you can't read code, 400 lines of terminal output fly past and you have no idea whether something brilliant just happened or your project is on fire.
 
-MyBuildy is a companion for any AI coding agent that runs in a terminal window. Built and tested with Claude Code; with other agents watching works and paste is untested — see [Works with your agent](#works-with-your-agent).
+MyBuildy is built and tested with **Claude Code**. Other AI coding agents that run in a terminal window are **experimental**: watching and explaining work, Paste into terminal is untested — see [Works with your agent](#works-with-your-agent).
 
 MyBuildy is a desktop companion that sits next to your AI coding agent's terminal and translates:
 
@@ -102,18 +102,31 @@ Loop engineering is the pattern of building a system that prompts the AI, checks
 
 ## Providers
 
-MyBuildy brings no model of its own — you connect a provider with your own key. **There is no default model: you choose one in Settings**, from a live model list fetched from your provider.
+MyBuildy brings no model of its own — you connect a cloud AI provider with your own key, or a model running on your own computer. **There is no default model: you choose one in Settings**, from a live model list fetched from your provider.
 
-**Recommended:**
+**With an API key (cloud):**
 
 - **Anthropic**
 - **OpenAI**
-- **Google Gemini**
 - **OpenRouter** — one key for many models, including open-source ones
+- **Google Gemini** — under *Advanced*, labelled *Not yet tested*
 
-**Advanced: run models locally** — Ollama, LM Studio, or any custom OpenAI-compatible endpoint.
+The guided setup on first launch walks you through getting and pasting a key.
+
+**On your own computer (local model, no key):** Ollama, LM Studio, or any custom OpenAI-compatible endpoint — see [Use a local model](#use-a-local-model-ollama-or-lm-studio).
 
 Whatever you pick, the model must **pass the vision check** (MyBuildy sends it a tiny test image and asks what color it is) before watching is enabled — analysis is screenshot-based, so a text-only model cannot do the job.
+
+### Use a local model (Ollama or LM Studio)
+
+A local model runs on your computer, so screenshots and project memory never leave it. There is no API key and no per-call cost; your computer needs to be powerful enough to run a model that can read images.
+
+1. Install **Ollama** (ollama.com) or **LM Studio** (lmstudio.ai) and download a model that can read images (a *vision* model). In LM Studio, start the local server.
+2. In MyBuildy open **Settings → Advanced: more providers and local models** and choose **Ollama** or **LM Studio**.
+3. Leave the Base URL empty to use the default (`http://localhost:11434` for Ollama, `http://localhost:1234/v1` for LM Studio), or enter the address your server uses.
+4. Pick your model from the list. Watching starts only once it passes the **vision check**.
+
+Note: the guided setup on first launch currently asks for a cloud API key; switch to your local model in Settings once setup is done (see [Known limitations](#known-limitations)).
 
 ---
 
@@ -159,7 +172,7 @@ Linux runs from source but is **untested** — see [Known limitations](#known-li
 
 MyBuildy opens a **guided setup** on first launch — one step per screen, about two minutes:
 
-1. **Your AI key** — pick a provider and paste your key (each has a *Where do I get a key?* link). It is encrypted on save — see [Security model](#security-model).
+1. **Your AI key** — pick a provider and paste your key (each has a *Where do I get a key?* link). It is encrypted on save — see [Security model](#security-model). Want a local model instead? See [Use a local model](#use-a-local-model-ollama-or-lm-studio).
 2. **Your model** — the **Suggested** one is highlighted and checked automatically; watching stays off until a model passes the **vision check**.
 3. **macOS only: see your screen** — one click opens the right System Settings pane; the status turns green by itself, and **Restart MyBuildy** reopens the app on the same step when macOS needs a restart.
 4. **macOS only: paste for you** (optional) — both macOS prompts appear here, explained, instead of by surprise later. **Skip — I'll paste myself** keeps pasting copy-only.
@@ -185,7 +198,11 @@ MyBuildy uses **your** API key, and **each analysis is a paid API call** to your
 
 ## Privacy and data
 
-No accounts, no MyBuildy servers, **no telemetry**. Your settings, keys and project memory live on this computer. This is everything MyBuildy sends, and where:
+No accounts, no MyBuildy servers, **no telemetry**. Your settings, keys and project memory are saved on this computer.
+
+**In short:** screenshots of the window you picked, and the relevant parts of this project's memory, go to **the AI provider you chose**, with your own key. Nothing goes anywhere else — except your spoken questions and the spoken guidance text, and only if you add your own ElevenLabs key. With a local model (Ollama or LM Studio on this computer), all of it stays on this computer.
+
+This is everything MyBuildy sends, and where:
 
 | Flow | What is sent | Sent to |
 |---|---|---|
@@ -194,7 +211,7 @@ No accounts, no MyBuildy servers, **no telemetry**. Your settings, keys and proj
 | **Spoken questions** (mic button) | Your recording | **ElevenLabs** speech-to-text |
 | | The transcript, plus a fresh screenshot of the watched window and the project context | **Your AI provider** |
 | **Spoken guidance** | The text being read aloud | **ElevenLabs**, only if you saved an ElevenLabs key (otherwise Buildy's own voice, or your computer's voice, speaks on this computer and nothing is sent) |
-| **Grading and verification** (checking a suggested prompt; checking that a pasted prompt worked) | The prompt, its expected outcome and context | **Your AI provider** — on Anthropic this is a separate call to a small Claude Haiku model |
+| **Grading and verification** (checking a suggested prompt; checking that a pasted prompt worked) | The prompt, its expected outcome and context | **Your AI provider** — on Anthropic this is a separate call to a smaller, cheaper model |
 | **Connection and model setup** (model list, vision check) | Requests carrying your API key; the vision check also sends a tiny test image | **Your AI provider** |
 
 With Ollama, LM Studio or a custom endpoint on this computer, "your AI provider" is on this computer too. A custom endpoint elsewhere receives what the table says your AI provider receives. Each API key is only ever sent to its own provider's address, and a custom endpoint's key only to the endpoint it was entered for.
@@ -237,9 +254,9 @@ Only **Paste into terminal** depends on how the agent's terminal accepts a paste
 
 | Agent | Status |
 |---|---|
-| **Claude Code** | Built and tested with this. |
-| **Codex CLI** | Recognised; watching works. Paste is untested. Copy and paste always works. |
-| **Any other terminal agent** (Gemini CLI, Cursor CLI, Aider, and so on) | Watching and explaining work. Paste is untested. Copy and paste always works. |
+| **Claude Code** | **Tested.** Built and tested with this. |
+| **Codex CLI** | **Experimental.** Recognised; watching works. Paste is untested. Copy and paste always works. |
+| **Any other terminal agent** (Gemini CLI, Cursor CLI, Aider, and so on) | **Experimental.** Watching and explaining work. Paste is untested. Copy and paste always works. |
 
 Tried MyBuildy with another agent? Please [open an issue](https://github.com/SukinShetty/mybuildy/issues) with what worked and what didn't — this table will be updated as results come in.
 
@@ -250,6 +267,8 @@ Tried MyBuildy with another agent? Please [open an issue](https://github.com/Suk
 - **Paste into terminal works on Windows and macOS.** On Linux you copy the prompt and paste it yourself. It never presses Enter.
 - **macOS is new in this release.** It is built, type-checked and unit-tested on macOS in CI, and the in-app permission checks explain every macOS prompt — but first hands-on testing on a real Mac is still under way ([docs/MAC-TESTING.md](./docs/MAC-TESTING.md)). Reports welcome.
 - **Paste goes only to the exact window you picked.** MyBuildy identifies the window by its system window number (on Windows also the program that owned it when you picked it), never by its title, and checks it again right before pasting. If that window has closed, belongs to something else now, or can't be brought to the front, nothing is pasted and the prompt stays on your clipboard. On macOS, a minimized picked window isn't restored for you: bring it back, then paste.
+- **Guided setup needs a cloud API key.** The first-launch setup offers cloud providers only; to use only a local model, finish setup, then switch in Settings ([Use a local model](#use-a-local-model-ollama-or-lm-studio)).
+- **Claude Code is the tested agent.** Other terminal agents are experimental — see [Works with your agent](#works-with-your-agent).
 - **Linux is untested.** It can run from source, but no testing has been done there yet.
 - **Window identity edge case:** if the watched window closes and, within ~15 seconds, a brand-new window appears that reuses the same OS window handle, MyBuildy can follow the new window. Closing and reopening normally is handled; this narrow reuse window is not.
 - **The paste guard is heuristic.** It is a speed bump against destructive prompts, not a guarantee — you remain the final check.
@@ -290,7 +309,7 @@ Turn MyBuildy on in System Settings > Privacy & Security > Screen Recording (**S
 Pasting needs Accessibility and Automation → System Events for MyBuildy (System Settings > Privacy & Security). The panel tells you which one is missing and opens it; the prompt stays on your clipboard meanwhile.
 
 **Can I run it fully offline?**
-Yes — pick Ollama or LM Studio under Advanced, point the Base URL at your local server, choose a vision-capable local model, and skip the ElevenLabs key.
+Yes — use a local model ([Use a local model](#use-a-local-model-ollama-or-lm-studio)) and skip the ElevenLabs key. Buildy's own voice runs on your computer. Your coding agent itself may still need the internet.
 
 Something else? [Open an issue](https://github.com/SukinShetty/mybuildy/issues).
 
