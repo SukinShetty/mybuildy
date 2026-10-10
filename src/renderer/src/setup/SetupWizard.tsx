@@ -13,6 +13,7 @@ import type {
   LocalProvider, LocalServerStatus, ModelChoice, NonSecretSettings, ProviderType, RedactedSettings, SecretName, SetupPermissionStatus, WindowSource,
 } from '../types'
 import { API_CREDITS_NOTE, CAPTURE_NOTICE_MESSAGE, PROVIDER_BILLING_URLS, dataDestinationNote, suggestsNextModel } from '../types'
+import { modelListFailureMessage, modelListDiagnosticText } from './model-list-recovery'
 import { useAppStore } from '../store/useAppStore'
 import { WindowPicker } from '../components/WindowPicker'
 import { useRefreshWhileOpen } from '../components/useRefreshWhileOpen'
@@ -486,13 +487,14 @@ function CloudModelStep({ allow, onBeforeNext }: StepProps): React.ReactElement 
   const setSettings = useAppStore((s) => s.setSettings)
   const [models, setModels] = useState<ModelChoice[] | null>(null)
   const [listError, setListError] = useState<string | null>(null)
+  const [listDiagnostic, setListDiagnostic] = useState<string | null>(null)
+  const [listing, setListing] = useState(false)
+  const listRequest = useRef(0)
   const [chosen, setChosen] = useState<string>(settings.modelId)
   const [checking, setChecking] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; message: string; errorKind: string | null } | null>(null)
   const [tried, setTried] = useState<string[]>([])
   const [showAll, setShowAll] = useState(false)
-  const started = useRef(false)
-
   const check = useCallback(async (modelId: string): Promise<void> => {
     setChosen(modelId)
     setTried((t) => (t.includes(modelId) ? t : [...t, modelId]))
@@ -511,20 +513,53 @@ function CloudModelStep({ allow, onBeforeNext }: StepProps): React.ReactElement 
     }
   }, [setSettings])
 
-  // Load the list; highlight the Suggested model and check it straight away.
-  useEffect(() => {
-    if (started.current) return
-    started.current = true
-    void (async () => {
-      const r = await window.mybuildy.listModels(settings.provider, settings.baseUrl)
+  // Retry the list itself; failed list loads have no model to test.
+  const loadModels = useCallback(async (): Promise<void> => {
+    const request = ++listRequest.current
+    const s = useAppStore.getState().settings
+    setListing(true)
+    setModels(null)
+    setListError(null)
+    setListDiagnostic(null)
+    setResult(null)
+    setTried([])
+    setShowAll(false)
+    try {
+      const r = await window.mybuildy.listModels(s.provider, s.baseUrl)
+      if (request !== listRequest.current) return
+      if (r.error) {
+        setModels([])
+        setListError(modelListFailureMessage(r.error))
+        setListDiagnostic(modelListDiagnosticText(r.diagnostic))
+        return
+      }
       setModels(r.models)
-      setListError(r.error)
-      const already = settings.modelId && (await window.mybuildy.getVisionStatus(settings.provider, settings.modelId)).passed
-      if (already) { setResult({ ok: true, message: 'This model can see your screen.', errorKind: null }); return }
+      if (r.models.length === 0) {
+        setListError('Your provider returned no usable models. Retry, or go Back to check your provider and key.')
+        return
+      }
+      const already = s.modelId && (await window.mybuildy.getVisionStatus(s.provider, s.modelId)).passed
+      if (request !== listRequest.current) return
+      if (already && r.models.some((m) => m.id === s.modelId)) {
+        setResult({ ok: true, message: 'This model can see your screen.', errorKind: null })
+        return
+      }
       const suggested = r.models.find((m) => m.suggested)
       if (suggested) await check(suggested.id)
-    })()
-  }, [settings.provider, settings.baseUrl, settings.modelId, check])
+    } catch {
+      if (request === listRequest.current) {
+        setModels([])
+        setListError('MyBuildy could not load your model list. Retry, or go Back to check your provider and key.')
+      }
+    } finally {
+      if (request === listRequest.current) setListing(false)
+    }
+  }, [check])
+
+  useEffect(() => {
+    void loadModels()
+    return () => { ++listRequest.current }
+  }, [loadModels, settings.provider, settings.baseUrl])
 
   useEffect(() => {
     allow(!!result?.ok && !checking)
@@ -546,14 +581,23 @@ function CloudModelStep({ allow, onBeforeNext }: StepProps): React.ReactElement 
         checks that it can see your screen.
       </p>
       {!models && !listError && <div style={S.small}>Loading the models your key can use…</div>}
-      {listError && <div style={S.error}>{listError}</div>}
+      {listError && (
+        <div role="alert" data-testid="model-list-error">
+          <div style={S.error}>{listError}</div>
+          {listDiagnostic && <div style={S.small} data-testid="model-list-diagnostic">{listDiagnostic}</div>}
+          <button type="button" className="btn-secondary" disabled={listing}
+            onClick={() => void loadModels()} data-testid="retry-model-list">
+            {listing ? 'Loading models…' : 'Retry loading models'}
+          </button>
+        </div>
+      )}
       <div style={S.list}>
         {visible.map((m) => (
           <button
             key={m.id}
             type="button"
             onClick={() => void check(m.id)}
-            disabled={checking}
+            disabled={checking || listing}
             className={`setup-choice setup-model-row${chosen === m.id ? ' is-on' : ''}`}
             aria-pressed={chosen === m.id}
           >

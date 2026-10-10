@@ -385,9 +385,21 @@ export interface ModelChoice {
   curated?: boolean                // hand-picked vision chat model, shown by default (see model-suggestions.ts)
 }
 
+export const MODEL_LIST_ERROR_KINDS = [
+  'key-rejected', 'billing', 'rate-limited', 'model-not-found', 'network',
+  'timeout', 'cannot-read-images', 'bad-request', 'server', 'empty-answer', 'unknown',
+] as const
+
+export interface ModelListDiagnostic {
+  stage: 'model-list'
+  status: number | null
+  kind: typeof MODEL_LIST_ERROR_KINDS[number]
+}
+
 export interface ModelListResult {
   models: ModelChoice[]
   error: string | null   // plain-English error when the list could not be fetched
+  diagnostic?: ModelListDiagnostic
 }
 
 // ─── Screen Capture ───────────────────────────────────────────────────────────

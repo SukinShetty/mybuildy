@@ -6,6 +6,8 @@ All notable changes to MyBuildy are documented here. The format follows
 
 ## [Unreleased]
 
+- Recover from a failed cloud model-list request during setup with an explicit retry, model-list-specific guidance and sanitized stage/status diagnostics. A failed list no longer recommends selecting models that were never loaded; watching still requires the vision check.
+
 ### Fixed
 
 - **Recover damaged project lists safely** — an unreadable or damaged project list no longer silently starts a replacement project. Registry writes use a synced temporary file and rename, with a last-good backup. Startup offers an explicit backup restore naming its active project, or quits without starting a watch; damaged bytes and project memory are kept.
