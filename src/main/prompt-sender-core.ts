@@ -336,7 +336,9 @@ function isAutomationDenied(e) { return e && e.errorNumber === -1743; }
 function isKeystrokeDenied(e) { return e && (e.errorNumber === 1002 || e.errorNumber === -1719 || e.errorNumber === -25211); }
 ${MAC_FRONT_WINDOW_FN}
 function windowList(option) { return ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo(option, $.kCGNullWindowID))) || []; }
-function onScreen() { return windowList($.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements); }
+// kCGWindowListOptionOnScreenOnly (1) | kCGWindowListExcludeDesktopElements (16), as numbers so a
+// missing bridge constant can never turn this into the unordered "all windows" list.
+function onScreen() { return windowList(17); }
 var windowId = parseInt(readEnv('MYBUILDY_TARGET_WINDOW_ID'), 10);
 var title = readEnv('MYBUILDY_TARGET_TITLE');
 if (!(windowId > 0)) $.exit(3);
