@@ -9,6 +9,7 @@ All notable changes to MyBuildy are documented here. The format follows
 ### Fixed
 
 - **AI requests time out on time** — the 60-second limit (120 seconds for local models) used to stop counting once the provider started answering, so an answer that stalled halfway could keep MyBuildy waiting far longer. Now the limit covers the whole answer, for every provider (Anthropic, OpenAI, Google Gemini, OpenRouter, Ollama, LM Studio and custom endpoints). When it passes, the request is stopped, the robot and Guidance tab say the provider took too long, and Analyze Now and Stop work straight away; an Analyze Now pressed while waiting still gets its analysis. Brainstorm replies may take longer as long as they keep arriving. LM Studio and custom endpoints now get the local-model limit for screen analysis too.
+- **Paste into terminal only reaches the window you picked** — the paste used to find its target by window title, so another window with the same title (two "Windows PowerShell" windows, or two Terminal windows on a Mac) could receive it. MyBuildy now identifies the picked window by its system window number — on Windows together with the program that owned it when you picked it — and checks it again right before pasting. If that window has closed or is no longer the same window, nothing is pasted and you are told so; the prompt stays on your clipboard. It still never presses Enter.
 
 ## [0.1.0] — 2026-09-23
 

@@ -421,7 +421,7 @@ describe('performSend', () => {
         platform,
         bindingChanged: () => 'The project changed before the prompt could be pasted.',
       })
-      const result = await performSend(PROMPT, macTarget, deps)
+      const result = await performSend(PROMPT, platform === 'win32' ? winTarget : macTarget, deps)
       expect(result).toEqual({
         sent: false,
         reason: 'stale',

@@ -355,6 +355,10 @@ export function pasteFailureMessage(result: SendPromptResult, isMac: boolean): s
       return `${result.detail || "Pasting isn't possible right now."} Nothing was pasted.`
     case 'window_not_in_front':
       return `Your terminal wasn't in front at the last moment, so nothing was pasted. The prompt is on your clipboard: press ${pasteKey} in your terminal, read it, then press Enter.`
+    case 'window_gone':
+      return `The window you picked has closed, so nothing was pasted. Pick your terminal again. The prompt is on your clipboard: press ${pasteKey} in your terminal, read it, then press Enter.`
+    case 'window_changed':
+      return `MyBuildy couldn't confirm this is the window you picked, so nothing was pasted. Pick your terminal again. The prompt is on your clipboard: press ${pasteKey} in your terminal, read it, then press Enter.`
     default:
       return `Pasting didn't finish, so the prompt is on your clipboard instead: press ${pasteKey} in your terminal, read it, then press Enter.`
   }
@@ -501,6 +505,8 @@ export interface SendEligibility {
 
 export type SendFailureReason =
   | 'window_not_in_front'
+  | 'window_gone'               // the picked window has closed
+  | 'window_changed'            // can't confirm the window is the one picked (handle reused / identity unknown)
   | 'timeout'
   | 'not_eligible'
   | 'stale'

@@ -118,6 +118,6 @@ Settings > **Delete all MyBuildy data** > confirm.
 
 ## Known limitation to watch for
 
-If your terminal app has **several windows open**, pasting brings the right *app* forward and then tries to raise the watched window by its exact title. If the title changed at that very moment, the paste could land in another window of the same app. If you see that happen, please report it with the log.
+Paste should only ever land in the **exact window you picked**, even when your terminal app has **several windows open with the same title**. MyBuildy brings the app forward, raises windows until the picked one is in front, and checks the front window's number right before Cmd+V; if it can't, nothing is pasted and the prompt stays on your clipboard. Please try it with two Terminal windows open, and report it with the log if the paste ever lands in the other one.
 
 Thank you — every "it did something odd" report is useful.

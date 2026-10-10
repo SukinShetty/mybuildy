@@ -4,15 +4,17 @@
 //   - evaluateSendEligibility: the single decision point for whether sending is
 //     allowed right now (the renderer only renders the result, never decides)
 //   - buildSendCommand: the FIXED PowerShell invocation. The prompt text and the
-//     window title are NEVER interpolated into the command string — the prompt
-//     travels via the clipboard only, and the title travels as an environment
-//     variable (MYBUILDY_TARGET_TITLE) read inside the script.
+//     target are NEVER interpolated into the command string — the prompt
+//     travels via the clipboard only, and the picked window's handle and
+//     pick-time owner travel as environment variables read inside the script.
+//     The target is the EXACT picked window (paste-target.ts), never a title.
 //   - buildMacSendCommand: the macOS equivalent — a FIXED osascript program with
 //     the same rules (prompt via clipboard, target via environment variables).
 //   - performSend: the shared send sequence (sanitize → clipboard → platform
 //     script → exit-code mapping), with every side effect injected so both
 //     platforms are unit-testable without Electron.
 
+import { MAC_FRONT_WINDOW_FN } from './paste-target'
 import type { SendEligibility, SendPromptResult, TerminalState } from '../renderer/src/types'
 
 // ─── Sanitize ────────────────────────────────────────────────────────────────
@@ -203,39 +205,61 @@ export function detectDestructivePrompt(promptText: string): { reason: string } 
 
 // ─── Fixed PowerShell send script ────────────────────────────────────────────
 
-// Exit codes: 0 = pasted; 2 = target window is not in the foreground; 3 = no
-// target title in the environment. The script contains NO user content: it
-// reads the target title from $env:MYBUILDY_TARGET_TITLE and sends only the
-// fixed keystroke Ctrl+V (the prompt is already on the clipboard). It NEVER
-// presses Enter: the user reads the pasted prompt and runs it themselves.
-// Everything slow (loading System.Windows.Forms, compiling the foreground
-// helper) happens BEFORE activation, so the foreground check runs on the line
-// directly before the paste keystroke. Foreground title matching mirrors
-// AppActivate: case-insensitive exact, then prefix, then suffix.
+// The script pastes ONLY into the exact window the user picked: the window
+// handle (HWND) from the desktopCapturer source id, owned by the same process
+// as at pick time (paste-target.ts). Titles are never used — another window
+// can have the same title, and the picked one is retitled all the time.
+//
+// Exit codes: 0 = pasted; 2 = the picked window is not the foreground window
+// after activation; 3 = no target in the environment; 4 = the picked window no
+// longer exists; 8 = the handle now belongs to a different process (the picked
+// window closed and the handle was reused). The script contains NO user
+// content: it reads the target from $env:MYBUILDY_TARGET_HWND and
+// $env:MYBUILDY_TARGET_PID and sends only the fixed keystroke Ctrl+V (the
+// prompt is already on the clipboard). It NEVER presses Enter: the user reads
+// the pasted prompt and runs it themselves. Everything slow (loading
+// System.Windows.Forms, compiling the helper) happens BEFORE activation, and
+// the three identity checks run on the lines directly before the keystroke.
 export const POWERSHELL_SEND_SCRIPT = `
-$target = $env:MYBUILDY_TARGET_TITLE
-if (-not $target) { exit 3 }
+$hv = $env:MYBUILDY_TARGET_HWND
+$pv = $env:MYBUILDY_TARGET_PID
+if (-not $hv -or -not $pv) { exit 3 }
+$h = [IntPtr][long]$hv
+$expectedPid = [uint32]$pv
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
-using System.Text;
-public static class MyBuildyForeground {
+public static class MyBuildyTarget {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+  [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool IsWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool IsIconic(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+  [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool BringWindowToTop(IntPtr hWnd);
+  [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+  [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+  [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+  public static uint OwnerPid(IntPtr hWnd) { uint p; GetWindowThreadProcessId(hWnd, out p); return p; }
+  public static void Activate(IntPtr hWnd) {
+    if (IsIconic(hWnd)) { ShowWindowAsync(hWnd, 9); System.Threading.Thread.Sleep(150); }
+    if (SetForegroundWindow(hWnd) && GetForegroundWindow() == hWnd) return;
+    uint ignored;
+    uint fgThread = GetWindowThreadProcessId(GetForegroundWindow(), out ignored);
+    uint me = GetCurrentThreadId();
+    bool attached = fgThread != 0 && fgThread != me && AttachThreadInput(me, fgThread, true);
+    try { BringWindowToTop(hWnd); SetForegroundWindow(hWnd); }
+    finally { if (attached) AttachThreadInput(me, fgThread, false); }
+  }
 }
 "@
-$t = $target.ToLowerInvariant()
-function Test-TargetInFront {
-  $sb = New-Object System.Text.StringBuilder 1024
-  [void][MyBuildyForeground]::GetWindowText([MyBuildyForeground]::GetForegroundWindow(), $sb, 1024)
-  $fg = $sb.ToString().ToLowerInvariant()
-  return (($fg -eq $t) -or $fg.StartsWith($t) -or $fg.EndsWith($t))
-}
-$wshell = New-Object -ComObject WScript.Shell
-try { [void]$wshell.AppActivate($target) } catch { }
+if (-not ([MyBuildyTarget]::IsWindow($h))) { exit 4 }
+if ([MyBuildyTarget]::OwnerPid($h) -ne $expectedPid) { exit 8 }
+[MyBuildyTarget]::Activate($h)
 Start-Sleep -Milliseconds 200
-if (-not (Test-TargetInFront)) { exit 2 }
+if (-not ([MyBuildyTarget]::IsWindow($h))) { exit 4 }
+if ([MyBuildyTarget]::OwnerPid($h) -ne $expectedPid) { exit 8 }
+if ([MyBuildyTarget]::GetForegroundWindow().ToInt64() -ne $h.ToInt64()) { exit 2 }
 [System.Windows.Forms.SendKeys]::SendWait('^v')
 exit 0
 `.trim()
@@ -246,16 +270,23 @@ export interface SendCommand {
   env: Record<string, string>
 }
 
+/** The exact picked Windows window: its handle and the process that owned it at pick time. */
+export interface WindowsSendTarget {
+  hwnd: string
+  ownerPid: number
+}
+
 /**
- * Build the powershell.exe invocation for a send. Takes the prompt and title so
- * the call site mirrors the real send, but NEITHER may appear in the command
- * string: the prompt travels via the clipboard, the title via the environment.
+ * Build the powershell.exe invocation for a send. Takes the prompt so the call
+ * site mirrors the real send, but neither the prompt nor the target may appear
+ * in the command string: the prompt travels via the clipboard, the target via
+ * the environment.
  */
-export function buildSendCommand(_promptText: string, targetWindowTitle: string): SendCommand {
+export function buildSendCommand(_promptText: string, target: WindowsSendTarget): SendCommand {
   return {
     exe: 'powershell.exe',
     args: ['-NoProfile', '-NonInteractive', '-Command', POWERSHELL_SEND_SCRIPT],
-    env: { MYBUILDY_TARGET_TITLE: targetWindowTitle },
+    env: { MYBUILDY_TARGET_HWND: target.hwnd, MYBUILDY_TARGET_PID: String(target.ownerPid) },
   }
 }
 
@@ -264,9 +295,11 @@ export function buildSendCommand(_promptText: string, targetWindowTitle: string)
 // Same contract as the PowerShell script: NO user content in the program text.
 // The target arrives only through environment variables:
 //   MYBUILDY_TARGET_WINDOW_ID — the CGWindowID from the desktopCapturer source
-//                               id "window:<id>:0" (a number)
-//   MYBUILDY_TARGET_TITLE     — the watched window's current title (best-effort
-//                               raise of that exact window within its app)
+//                               id "window:<id>:0" (a number): the EXACT window
+//                               the user picked
+//   MYBUILDY_TARGET_TITLE     — the watched window's last known title, used
+//                               ONLY to try that window first when raising
+//                               windows; it never decides where the paste goes
 // and the prompt is already on the clipboard; the only keystrokes sent are the
 // fixed Cmd+V — never Return: the user reads the pasted prompt and runs it.
 //
@@ -277,18 +310,20 @@ export function buildSendCommand(_promptText: string, targetWindowTitle: string)
 // process). On macOS 14+ a background process such as osascript can no longer
 // force activation through NSRunningApplication, so the System Events
 // `frontmost = true` that follows is what actually brings the app forward.
-// The frontmost check then asks System Events too (NSWorkspace's
-// frontmostApplication only refreshes inside a running main run loop, which
-// osascript never spins, so it could report a stale app) — and no keystroke
-// is sent unless the owning process is the one in front. KNOWN LIMITATION: if that app has several windows open, macOS
-// brings the app forward and the script tries to raise the watched window by
-// its exact title; when the title just changed, another window of the same app
-// may be the one that receives the paste.
+// Bringing the app forward is not enough when it has several windows (two
+// Terminal windows can even share a title), so the script then raises that
+// app's windows one by one until the picked window NUMBER is the front window
+// (frontWindowNumber, paste-target.ts). Right before Cmd+V it checks both that
+// the owning process is frontmost (System Events — NSWorkspace's
+// frontmostApplication is stale outside a run loop, which osascript never
+// spins) and that the front window is the picked window number. Otherwise
+// nothing is typed.
 //
-// Exit codes: 0 = sent; 2 = the target app is not frontmost after activation;
-// 3 = no target in the environment; 4 = the window / its app no longer exists;
-// 5 = macOS refused Automation of System Events (error -1743); 6 = macOS
-// refused the keystroke (Accessibility); 7 = any other keystroke failure.
+// Exit codes: 0 = sent; 2 = the picked window is not the front window after
+// activation; 3 = no target in the environment; 4 = the window / its app no
+// longer exists; 5 = macOS refused Automation of System Events (error -1743);
+// 6 = macOS refused the keystroke (Accessibility); 7 = any other keystroke
+// failure.
 export const MAC_SEND_SCRIPT = `
 ObjC.import('stdlib');
 ObjC.import('AppKit');
@@ -299,10 +334,13 @@ function readEnv(name) {
 }
 function isAutomationDenied(e) { return e && e.errorNumber === -1743; }
 function isKeystrokeDenied(e) { return e && (e.errorNumber === 1002 || e.errorNumber === -1719 || e.errorNumber === -25211); }
+${MAC_FRONT_WINDOW_FN}
+function windowList(option) { return ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo(option, $.kCGNullWindowID))) || []; }
+function onScreen() { return windowList($.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements); }
 var windowId = parseInt(readEnv('MYBUILDY_TARGET_WINDOW_ID'), 10);
 var title = readEnv('MYBUILDY_TARGET_TITLE');
 if (!(windowId > 0)) $.exit(3);
-var windows = ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionAll, $.kCGNullWindowID))) || [];
+var windows = windowList($.kCGWindowListOptionAll);
 var owner = null;
 for (var i = 0; i < windows.length; i++) {
   if (windows[i].kCGWindowNumber === windowId) { owner = windows[i]; break; }
@@ -316,9 +354,20 @@ var systemEvents = Application('System Events');
 try {
   var proc = systemEvents.processes.whose({ unixId: pid })[0];
   proc.frontmost = true;
-  if (title) {
-    var matches = proc.windows.whose({ name: title });
-    if (matches.length > 0) matches[0].actions.byName('AXRaise').perform();
+  delay(0.15);
+  if (frontWindowNumber(onScreen()) !== windowId) {
+    var axWindows = proc.windows();
+    var order = [];
+    for (var j = 0; j < axWindows.length && j < 20; j++) {
+      var name = '';
+      try { name = axWindows[j].name(); } catch (e) {}
+      if (title && name === title) order.unshift(axWindows[j]); else order.push(axWindows[j]);
+    }
+    for (var k = 0; k < order.length; k++) {
+      try { order[k].actions.byName('AXRaise').perform(); } catch (e) { if (isAutomationDenied(e)) throw e; }
+      delay(0.1);
+      if (frontWindowNumber(onScreen()) === windowId) break;
+    }
   }
 } catch (e) {
   if (isAutomationDenied(e)) $.exit(5);
@@ -332,6 +381,7 @@ try {
   if (isAutomationDenied(e)) $.exit(5);
 }
 if (frontPid !== pid) $.exit(2);
+if (frontWindowNumber(onScreen()) !== windowId) $.exit(2);
 try {
   systemEvents.keystroke('v', { using: 'command down' });
 } catch (e) {
@@ -373,8 +423,10 @@ export function buildMacSendCommand(
 export type SendExit = number | null
 
 export interface SendTarget {
-  title: string             // current title of the watched window
-  sourceId: string | null   // desktopCapturer source id of the watched window
+  title: string             // last known title (macOS: only to try that window first; never decides)
+  sourceId: string | null   // desktopCapturer source id of the watched window — its identity
+  /** Windows: the process that owned the window when it was picked (null/absent = unknown → refuse). */
+  ownerPid?: number | null
 }
 
 /** Every side effect of a send, injected so the sequence is testable. */
@@ -430,8 +482,15 @@ export async function performSend(
     command = buildMacSendCommand('', { windowId, title: target.title })
     deps.log('[Send] spawning osascript (fixed script, target via env)')
   } else if (deps.platform === 'win32') {
-    command = buildSendCommand('', target.title)
-    deps.log('[Send] spawning powershell (fixed script, title via env)')
+    const hwnd = macWindowIdFromSourceId(target.sourceId) // same "window:<HWND>:0" shape on Windows
+    if (!hwnd || typeof target.ownerPid !== 'number' || !(target.ownerPid > 0)) {
+      // Without the picked window's handle AND its pick-time owner there is no
+      // way to prove the window in front is the picked one — refuse.
+      deps.log('[Send] picked window identity unknown (handle or owner missing) — nothing pasted, text left on clipboard')
+      return { sent: false, reason: 'window_changed' }
+    }
+    command = buildSendCommand('', { hwnd, ownerPid: target.ownerPid })
+    deps.log('[Send] spawning powershell (fixed script, window handle + owner via env)')
   } else {
     deps.log(`[Send] rejected: no send implementation on ${deps.platform}`)
     return { sent: false, reason: 'not_eligible' }
@@ -461,11 +520,15 @@ function interpretSendExit(platform: string, exit: SendExit, log: (message: stri
     log(`[Send] ${tool} timed out — killed, text left on clipboard`)
     return { sent: false, reason: 'timeout' }
   }
+  if (exit === 4) {
+    log('[Send] picked window no longer exists (exit 4) — text left on clipboard')
+    return { sent: false, reason: 'window_gone' }
+  }
+  if (platform === 'win32' && exit === 8) {
+    log('[Send] picked window handle now belongs to another process (exit 8) — text left on clipboard')
+    return { sent: false, reason: 'window_changed' }
+  }
   if (platform === 'darwin') {
-    if (exit === 4) {
-      log('[Send] target window no longer exists (exit 4) — text left on clipboard')
-      return { sent: false, reason: 'window_not_in_front' }
-    }
     if (exit === 5) {
       log('[Send] macOS Automation permission for System Events missing (exit 5) — text left on clipboard')
       return { sent: false, reason: 'automation_permission' }
