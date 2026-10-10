@@ -17,7 +17,6 @@ import { IPC } from '../../../renderer/src/types'
 import type { AIProvider, ProviderInfo } from '../provider-interface'
 import { buildAnalysisSystemPrompt, buildAnalysisUserPrompt, buildBrainstormSystemPrompt } from '../prompt-builder'
 import { parseAnalysisResponse, tryExtractProjectData } from '../response-parser'
-import { fetchWithTimeout } from '../fetch-with-timeout'
 import { chatCompletionLimits, ANALYSIS_MAX_OUTPUT_TOKENS } from '../request-shape'
 
 // ─── Provider info definitions ───────────────────────────────────────────────
@@ -132,12 +131,11 @@ export class OpenAICompatibleProvider implements AIProvider {
     const headers = this.buildHeaders(settings)
 
     try {
-      const isLocal = this.info.type === 'lmstudio' || this.info.type === 'custom'
-      const response = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
+      const response = await providerFetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestBody),
-      }, isLocal)
+      }, { isLocal: this.isLocal(), stream: true })
 
       if (!response.ok) {
         throw await providerHttpError(`${this.info.displayName}`, response)
@@ -202,7 +200,7 @@ export class OpenAICompatibleProvider implements AIProvider {
       method: 'POST',
       headers,
       body: JSON.stringify(requestBody),
-    })
+    }, { isLocal: this.isLocal() })
 
     if (!response.ok) {
       throw await providerHttpError(`${this.info.displayName}`, response)
@@ -216,6 +214,11 @@ export class OpenAICompatibleProvider implements AIProvider {
     if (!content) throw new Error(`${this.info.displayName} returned no text content`)
 
     return content
+  }
+
+  /** LM Studio and custom endpoints get the local-model timeout (120 s), for analysis and brainstorm alike. */
+  private isLocal(): boolean {
+    return this.info.type === 'lmstudio' || this.info.type === 'custom'
   }
 
   private resolveBaseUrl(settings: AppSettings): string {

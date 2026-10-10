@@ -103,7 +103,7 @@ export class OllamaProvider implements AIProvider {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
-      })
+      }, { isLocal: true, stream: true })
 
       if (!response.ok) {
         throw await providerHttpError(`Ollama`, response)

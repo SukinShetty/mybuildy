@@ -16,7 +16,6 @@ import { IPC } from '../../../renderer/src/types'
 import type { AIProvider, ProviderInfo } from '../provider-interface'
 import { buildAnalysisSystemPrompt, buildAnalysisUserPrompt, buildBrainstormSystemPrompt } from '../prompt-builder'
 import { parseAnalysisResponse, tryExtractProjectData } from '../response-parser'
-import { fetchWithTimeout } from '../fetch-with-timeout'
 import { ANALYSIS_MAX_OUTPUT_TOKENS } from '../request-shape'
 
 export const anthropicProviderInfo: ProviderInfo = {
@@ -92,11 +91,11 @@ export class AnthropicProvider implements AIProvider {
     const headers = this.buildHeaders(settings)
 
     try {
-      const response = await fetchWithTimeout(apiUrl, {
+      const response = await providerFetch(apiUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify(requestBody),
-      })
+      }, { stream: true })
 
       if (!response.ok) {
         throw await providerHttpError(`Anthropic`, response)

@@ -6,6 +6,10 @@ All notable changes to MyBuildy are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **AI requests time out on time** — the 60-second limit (120 seconds for local models) used to stop counting once the provider started answering, so an answer that stalled halfway could keep MyBuildy waiting far longer. Now the limit covers the whole answer, for every provider (Anthropic, OpenAI, Google Gemini, OpenRouter, Ollama, LM Studio and custom endpoints). When it passes, the request is stopped, the robot and Guidance tab say the provider took too long, and Analyze Now and Stop work straight away; an Analyze Now pressed while waiting still gets its analysis. Brainstorm replies may take longer as long as they keep arriving. LM Studio and custom endpoints now get the local-model limit for screen analysis too.
+
 ## [0.1.0] — 2026-09-23
 
 First public release, source-available under the PolyForm Shield License 1.0.0. Windows installer and macOS DMGs (Apple Silicon and Intel) via GitHub Releases; Linux runs from source (untested).
