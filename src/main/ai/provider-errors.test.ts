@@ -48,10 +48,16 @@ describe('mapProviderError', () => {
     expect(r.message).toBe(PROVIDER_ERROR_MESSAGES.modelNotFound)
   })
 
-  it('timeout → network message', () => {
-    const r = mapProviderError('Request timed out after 60s. The API may be experiencing issues — try again.')
-    expect(r.kind).toBe('network')
-    expect(r.message).toBe(PROVIDER_ERROR_MESSAGES.network)
+  it('timeout → its own plain timeout message (not "check your internet")', () => {
+    const r = mapProviderError('ProviderTimeoutError: Request timed out after 60s. The API may be experiencing issues — try again.')
+    expect(r.kind).toBe('timeout')
+    expect(r.message).toBe(PROVIDER_ERROR_MESSAGES.timeout)
+  })
+
+  it('a local model that timed out gets the local wording', () => {
+    const r = mapProviderError('ProviderTimeoutError: Request timed out after 120s. Check that your local model server is running and responsive.')
+    expect(r.kind).toBe('timeout')
+    expect(r.message).toBe(PROVIDER_ERROR_MESSAGES.localTimeout)
   })
 
   it('connection refused / fetch failure → network message', () => {
