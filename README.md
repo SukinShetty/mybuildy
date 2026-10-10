@@ -122,11 +122,11 @@ Whatever you pick, the model must **pass the vision check** (MyBuildy sends it a
 A local model runs on your computer, so screenshots and project memory never leave it. There is no API key and no per-call cost; your computer needs to be powerful enough to run a model that can read images.
 
 1. Install **Ollama** (ollama.com) or **LM Studio** (lmstudio.ai) and download a model that can read images (a *vision* model). In LM Studio, start the local server.
-2. In MyBuildy open **Settings → Advanced: more providers and local models** and choose **Ollama** or **LM Studio**.
-3. Leave the Base URL empty to use the default (`http://localhost:11434` for Ollama, `http://localhost:1234/v1` for LM Studio), or enter the address your server uses.
-4. Pick your model from the list. Watching starts only once it passes the **vision check**.
+2. In the guided setup, on **Your AI key**, click **Use a local model instead (Ollama or LM Studio)**. MyBuildy looks for each app at its default address (`http://localhost:11434` for Ollama, `http://localhost:1234/v1` for LM Studio) and shows whether it is running. If it isn't, the setup says what to do; click **Check again** once it is open.
+3. On **Your model**, pick a model. The ones that can read images are listed first and marked **Can read images**; MyBuildy checks the first one automatically. If none can read images, the setup tells you to download one.
+4. Watching starts only once the model passes the **vision check**. The first check can take a minute while the model loads.
 
-Note: the guided setup on first launch currently asks for a cloud API key; switch to your local model in Settings once setup is done (see [Known limitations](#known-limitations)).
+Already set up with a key? Open **Settings → Advanced: more providers and local models**, choose **Ollama** or **LM Studio**, leave the Base URL empty for the default address (or enter the one your server uses), and pick your model.
 
 ---
 
@@ -172,7 +172,7 @@ Linux runs from source but is **untested** — see [Known limitations](#known-li
 
 MyBuildy opens a **guided setup** on first launch — one step per screen, about two minutes:
 
-1. **Your AI key** — pick a provider and paste your key (each has a *Where do I get a key?* link). It is encrypted on save — see [Security model](#security-model). Want a local model instead? See [Use a local model](#use-a-local-model-ollama-or-lm-studio).
+1. **Your AI key** — pick a provider and paste your key (each has a *Where do I get a key?* link). It is encrypted on save — see [Security model](#security-model). No key? Click **Use a local model instead** to use Ollama or LM Studio on this computer — see [Use a local model](#use-a-local-model-ollama-or-lm-studio).
 2. **Your model** — the **Suggested** one is highlighted and checked automatically; watching stays off until a model passes the **vision check**.
 3. **macOS only: see your screen** — one click opens the right System Settings pane; the status turns green by itself, and **Restart MyBuildy** reopens the app on the same step when macOS needs a restart.
 4. **macOS only: paste for you** (optional) — both macOS prompts appear here, explained, instead of by surprise later. **Skip — I'll paste myself** keeps pasting copy-only.
@@ -267,7 +267,6 @@ Tried MyBuildy with another agent? Please [open an issue](https://github.com/Suk
 - **Paste into terminal works on Windows and macOS.** On Linux you copy the prompt and paste it yourself. It never presses Enter.
 - **macOS is new in this release.** It is built, type-checked and unit-tested on macOS in CI, and the in-app permission checks explain every macOS prompt — but first hands-on testing on a real Mac is still under way ([docs/MAC-TESTING.md](./docs/MAC-TESTING.md)). Reports welcome.
 - **Paste goes only to the exact window you picked.** MyBuildy identifies the window by its system window number (on Windows also the program that owned it when you picked it), never by its title, and checks it again right before pasting. If that window has closed, belongs to something else now, or can't be brought to the front, nothing is pasted and the prompt stays on your clipboard. On macOS, a minimized picked window isn't restored for you: bring it back, then paste.
-- **Guided setup needs a cloud API key.** The first-launch setup offers cloud providers only; to use only a local model, finish setup, then switch in Settings ([Use a local model](#use-a-local-model-ollama-or-lm-studio)).
 - **Claude Code is the tested agent.** Other terminal agents are experimental — see [Works with your agent](#works-with-your-agent).
 - **Linux is untested.** It can run from source, but no testing has been done there yet.
 - **Window identity edge case:** if the watched window closes and, within ~15 seconds, a brand-new window appears that reuses the same OS window handle, MyBuildy can follow the new window. Closing and reopening normally is handled; this narrow reuse window is not.
@@ -309,7 +308,7 @@ Turn MyBuildy on in System Settings > Privacy & Security > Screen Recording (**S
 Pasting needs Accessibility and Automation → System Events for MyBuildy (System Settings > Privacy & Security). The panel tells you which one is missing and opens it; the prompt stays on your clipboard meanwhile.
 
 **Can I run it fully offline?**
-Yes — use a local model ([Use a local model](#use-a-local-model-ollama-or-lm-studio)) and skip the ElevenLabs key. Buildy's own voice runs on your computer. Your coding agent itself may still need the internet.
+Yes — choose **Use a local model instead** in the guided setup ([Use a local model](#use-a-local-model-ollama-or-lm-studio)) and skip the ElevenLabs key. Buildy's own voice runs on your computer. Your coding agent itself may still need the internet.
 
 Something else? [Open an issue](https://github.com/SukinShetty/mybuildy/issues).
 
