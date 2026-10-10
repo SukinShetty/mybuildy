@@ -20,22 +20,34 @@ export function isSafeExternalUrl(url: string): boolean {
 
 /**
  * May one of our windows navigate to `url`?
- *   - file:// is always allowed (the packaged renderer bundle)
+ *   - file:// must be the exact bundled renderer document (query/hash may vary)
  *   - when a dev server URL is configured (ELECTRON_RENDERER_URL), that exact
  *     origin is allowed too (http://localhost:<port> during `npm run dev`)
  *   - everything else (remote sites, javascript:, other local ports) is denied
  */
-export function isAllowedAppNavigation(url: string, devServerUrl?: string | null): boolean {
+export function isAllowedAppNavigation(url: string, devServerUrl?: string | null, bundledRendererUrl?: string | null): boolean {
   let target: URL
   try {
     target = new URL(url)
   } catch {
     return false
   }
-  if (target.protocol === 'file:') return true
+  if (target.protocol === 'file:') {
+    if (!bundledRendererUrl) return false
+    try {
+      const bundled = new URL(bundledRendererUrl)
+      if (bundled.protocol !== 'file:') return false
+      // Different windows select their view with query parameters; those and
+      // fragments do not change which document receives the privileged preload.
+      target.search = ''; target.hash = ''
+      bundled.search = ''; bundled.hash = ''
+      return target.href === bundled.href
+    } catch { return false }
+  }
   if (devServerUrl) {
     try {
-      return target.origin === new URL(devServerUrl).origin
+      const dev = new URL(devServerUrl)
+      return (dev.protocol === 'http:' || dev.protocol === 'https:') && target.origin === dev.origin
     } catch {
       return false // malformed dev server URL — deny anything non-file
     }

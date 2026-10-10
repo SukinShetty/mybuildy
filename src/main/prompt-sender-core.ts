@@ -422,7 +422,7 @@ export function buildMacSendCommand(
 // ─── Shared send sequence ────────────────────────────────────────────────────
 
 /** Exit code of the send script, or null when it timed out and was killed. */
-export type SendExit = number | null
+export type SendExit = number | null | 'cancelled'
 
 export interface SendTarget {
   title: string             // last known title (macOS: only to try that window first; never decides)
@@ -509,6 +509,7 @@ export async function performSend(
 
 /** Map a send script's exit code to a result (and its [Send] log line). */
 function interpretSendExit(platform: string, exit: SendExit, log: (message: string) => void): SendPromptResult {
+  if (exit === 'cancelled') return { sent: false, reason: 'cancelled' }
   const tool = platform === 'darwin' ? 'osascript' : 'PowerShell'
   if (exit === 0) {
     log('[Send] keystrokes delivered (exit 0)')

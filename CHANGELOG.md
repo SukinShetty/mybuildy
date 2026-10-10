@@ -6,6 +6,16 @@ All notable changes to MyBuildy are documented here. The format follows
 
 ## [Unreleased]
 
+- Recover from a failed cloud model-list request during setup with an explicit retry, model-list-specific guidance and sanitized stage/status diagnostics. A failed list no longer recommends selecting models that were never loaded; watching still requires the vision check.
+
+### Fixed
+
+- **Recover damaged project lists safely** — an unreadable or damaged project list no longer silently starts a replacement project. Registry writes use a synced temporary file and rename, with a last-good backup. Startup offers an explicit backup restore naming its active project, or quits without starting a watch; damaged bytes and project memory are kept.
+- **Stop when the watched window disappears** — the first observed gap now ends the watch and cancels in-flight work. Pick the window again to continue, including after minimization when the OS removes it from the capture list.
+- **Restrict navigation and custom endpoints** — privileged windows may load only the bundled renderer document (or the configured development origin in development). Remote custom AI endpoints require HTTPS; loopback HTTP remains available for local servers.
+- **Cancel pending paste dispatch on Stop** — pending native paste processes are stopped when the watch ends. Because a keystroke may already have reached the terminal, cancellation warns the user to check the terminal and does not reuse the same approval automatically.
+- **Refresh a transitive dependency** — update the MCP SDK within Nemp's existing supported version range.
+
 ## [0.1.0] — 2026-09-23
 
 First public release, source-available under the PolyForm Shield License 1.0.0. Windows installer and macOS DMGs (Apple Silicon and Intel) via GitHub Releases; Linux runs from source (untested).

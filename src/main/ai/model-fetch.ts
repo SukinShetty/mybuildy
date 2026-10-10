@@ -14,6 +14,7 @@ import {
 } from './model-list'
 import { applySuggestedTag } from './model-suggestions'
 import { mapProviderError } from './provider-errors'
+import { modelListDiagnostic } from './model-list-diagnostic'
 import { keyFingerprint } from '../vision-approvals'
 import { getProviderInfo } from './provider-registry'
 
@@ -95,10 +96,12 @@ export async function fetchModelsForProvider(settings: AppSettings): Promise<Mod
   }
   try {
     const models = applySuggestedTag(settings.provider, await fetchRawModels(settings))
-    cache.set(cacheKey, { at: Date.now(), models })
+    // An empty list may be transient; Retry must perform a fresh request.
+    if (models.length > 0) cache.set(cacheKey, { at: Date.now(), models })
     return { models, error: null }
   } catch (error) {
-    console.warn(`[Models] list fetch failed for ${settings.provider}:`, String(error).slice(0, 200))
-    return { models: [], error: redactKnownSecrets(mapProviderError(String(error)).message) }
+    const diagnostic = modelListDiagnostic(error)
+    console.warn('[Models] list fetch failed:', diagnostic)
+    return { models: [], error: redactKnownSecrets(mapProviderError(String(error)).message), diagnostic }
   }
 }

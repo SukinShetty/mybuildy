@@ -349,6 +349,8 @@ export const PASTE_SUCCESS_MESSAGE = 'Pasted into your terminal. Read it, then p
 export function pasteFailureMessage(result: SendPromptResult, isMac: boolean): string {
   const pasteKey = isMac ? 'Cmd+V' : 'Ctrl+V'
   switch (result.reason) {
+    case 'cancelled':
+      return 'Paste was cancelled, but the text may already have reached your terminal. Check the terminal before pasting or running anything again.'
     case 'stale':
       return `${result.detail || 'The prompt changed before it could be pasted.'} Nothing was pasted.`
     case 'not_eligible':
@@ -383,9 +385,21 @@ export interface ModelChoice {
   curated?: boolean                // hand-picked vision chat model, shown by default (see model-suggestions.ts)
 }
 
+export const MODEL_LIST_ERROR_KINDS = [
+  'key-rejected', 'billing', 'rate-limited', 'model-not-found', 'network',
+  'timeout', 'cannot-read-images', 'bad-request', 'server', 'empty-answer', 'unknown',
+] as const
+
+export interface ModelListDiagnostic {
+  stage: 'model-list'
+  status: number | null
+  kind: typeof MODEL_LIST_ERROR_KINDS[number]
+}
+
 export interface ModelListResult {
   models: ModelChoice[]
   error: string | null   // plain-English error when the list could not be fetched
+  diagnostic?: ModelListDiagnostic
 }
 
 // ─── Screen Capture ───────────────────────────────────────────────────────────
@@ -510,6 +524,7 @@ export type SendFailureReason =
   | 'timeout'
   | 'not_eligible'
   | 'stale'
+  | 'cancelled'                // native dispatch cancelled; delivery may already have happened
   | 'unknown'
   | 'accessibility_permission'  // macOS: MyBuildy may not post keystrokes (Accessibility)
   | 'automation_permission'     // macOS: MyBuildy may not control System Events (Automation)

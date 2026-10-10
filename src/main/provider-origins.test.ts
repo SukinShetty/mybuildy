@@ -41,10 +41,18 @@ describe('local and custom providers', () => {
     expect(isAllowedBaseUrl('ollama', 'http://example.com:11434')).toBe(false)
   })
 
-  it('custom accepts any http(s) endpoint, nothing else', () => {
+  it('custom requires HTTPS except for loopback HTTP', () => {
     expect(isAllowedBaseUrl('custom', 'https://llm.example.com/v1')).toBe(true)
     expect(isAllowedBaseUrl('custom', 'http://localhost:8080/v1')).toBe(true)
     expect(isAllowedBaseUrl('custom', 'file:///etc/passwd')).toBe(false)
+    for (const endpoint of ['http://llm.example.com/v1', 'http://192.168.1.2:8080/v1', 'http://localhost.evil.example/v1']) {
+      expect(isAllowedBaseUrl('custom', endpoint)).toBe(false)
+      expect(customKeyAllowed(new URL(endpoint).origin, endpoint)).toBe(false)
+    }
+    for (const endpoint of ['http://127.0.0.1:8080/v1', 'http://[::1]:8080/v1', 'http://localhost:8080/v1']) {
+      expect(isAllowedBaseUrl('custom', endpoint)).toBe(true)
+      expect(customKeyAllowed(new URL(endpoint).origin, endpoint)).toBe(true)
+    }
   })
 })
 

@@ -1,14 +1,4 @@
-// A minimized watched window must not drop the watch.
-//
-// Reproduces the installed-build report ("Tally is no longer open. Pick a window
-// to watch" while the terminal was still open). Measured on Windows: Electron's
-// window list (desktopCapturer) leaves out a window while it is MINIMIZED and
-// lists it again, same id, when it is restored. Before the fix the continuity
-// rules read that gap as a closed window: minimized for 60 s → lost; restored
-// after 15 s with the new title Claude Code sets every turn → lost.
-//
-// Drives the real analysis loop with fake timers; the live window list and the
-// OS presence probe are mocked to behave exactly as measured.
+// Launch policy: minimizing or any observed capture-list gap requires reselection.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('electron', () => ({ app: { getPath: () => '.' }, screen: {}, BrowserWindow: class {} }))
@@ -47,9 +37,10 @@ vi.mock('./vision-approvals', () => ({ hasVisionPass: () => true }))
 vi.mock('./ai/prompt-quality-check', () => ({ checkPromptQuality: vi.fn(), buildQualityPatch: vi.fn() }))
 vi.mock('./ai/verifier-check', () => ({ verifyPromptOutcome: vi.fn() }))
 
-import { startWatching, stopAnalysisLoop, isAnalysisLoopRunning, setWatchBroadcast } from './analysis-loop'
+import { startWatching, stopAnalysisLoop, stopSignal, isAnalysisLoopRunning, setWatchBroadcast } from './analysis-loop'
 import { defaultSettings, type WatchStatus } from '../renderer/src/types'
 import { logWatchEvent } from './watch-log'
+import { captureWatchedWindow } from './capturer'
 
 const send = vi.fn()
 const fakeWindow = { isDestroyed: () => false, webContents: { send } } as never
@@ -61,7 +52,6 @@ setWatchBroadcast({ status: (s) => statuses.push(s), analysis: () => {} })
 function watchMessages(): Array<{ windowName: string | null; message: string | null }> {
   return statuses.map((s) => ({ windowName: s.windowName, message: s.message }))
 }
-const dropped = () => watchMessages().some((m) => m.windowName === null && /no longer open/.test(m.message || ''))
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -81,38 +71,34 @@ async function startAndSettle(): Promise<void> {
   await vi.advanceTimersByTimeAsync(3000) // owner process recorded, a poll or two
 }
 
-describe('a minimized watched window keeps the watch', () => {
-  it('minimized for 10 minutes: never "no longer open", and the watch is still on', async () => {
+describe('a capture gap requires explicit reselection', () => {
+  it('stops on a minimized-window gap and aborts active work', async () => {
     await startAndSettle()
-    Object.assign(env, { listed: false, minimized: true }) // user minimizes the terminal
-    await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
-
-    expect(dropped()).toBe(false)
-    expect(watchMessages().some((m) => /minimized/.test(m.message || ''))).toBe(true)
-    // The analysis loop is paused only by the user or a real loss.
-    expect(isAnalysisLoopRunning()).toBe(true)
+    const activeSignal = stopSignal()
+    Object.assign(env, { listed: false, minimized: true })
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(activeSignal.aborted).toBe(true)
+    expect(isAnalysisLoopRunning()).toBe(false)
+    expect(watchMessages().at(-1)?.message).toMatch(/select it again/)
+    expect(watchMessages().at(-1)?.windowName).toBeNull()
   })
 
-  it('restored after 30 s with a NEW title (Claude Code renamed the tab): watch resumes', async () => {
+  it('does not resume after the same source id returns, even with a matching title', async () => {
     await startAndSettle()
     Object.assign(env, { listed: false, minimized: true })
-    await vi.advanceTimersByTimeAsync(30_000)
-    Object.assign(env, { listed: true, minimized: false, title: '⠋ Fix invoice totals' })
-    await vi.advanceTimersByTimeAsync(4000)
-
-    expect(dropped()).toBe(false)
-    const last = watchMessages().at(-1)!
-    expect(last).toEqual({ windowName: '⠋ Fix invoice totals', message: null })
-    expect(isAnalysisLoopRunning()).toBe(true)
+    await vi.advanceTimersByTimeAsync(3000)
+    const capturesAfterStop = vi.mocked(captureWatchedWindow).mock.calls.length
+    Object.assign(env, { listed: true, minimized: false })
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(isAnalysisLoopRunning()).toBe(false)
+    expect(vi.mocked(captureWatchedWindow).mock.calls.length).toBe(capturesAfterStop)
   })
 
-  it('a window that is really closed still halts, with the reason logged', async () => {
+  it('still permits continuously present windows to change title', async () => {
     await startAndSettle()
-    Object.assign(env, { listed: false, exists: false }) // user closes the terminal
-    await vi.advanceTimersByTimeAsync(61_000 + 4000)
-
-    expect(dropped()).toBe(true)
-    expect(isAnalysisLoopRunning()).toBe(false)
-    expect(vi.mocked(logWatchEvent)).toHaveBeenCalledWith('lost', expect.objectContaining({ reason: 'closed' }))
+    env.title = 'Working on invoice totals'
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(isAnalysisLoopRunning()).toBe(true)
+    expect(watchMessages().at(-1)?.windowName).toBe(env.title)
   })
 })

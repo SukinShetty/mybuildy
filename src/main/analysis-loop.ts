@@ -49,7 +49,7 @@ import { chatCompletionLimits } from './ai/request-shape'
 import { hasVisionPass } from './vision-approvals'
 import { enqueueSpeech } from './voice-player'
 import { RecentTopics } from './semantic-dedup'
-import { isStaleSession, startContinuity, pollContinuityWithPresence, type ContinuityEvent, type LostReason } from './capture-guard'
+import { isStaleSession, startContinuity, pollStrictContinuity, type ContinuityEvent, type LostReason } from './capture-guard'
 import { probeWindowPresence } from './window-presence'
 import { logWatchEvent } from './watch-log'
 import {
@@ -490,8 +490,8 @@ async function pollWatchContinuity(companionWindow: BrowserWindow, mySession: nu
     const sources = await listLiveWindowSources()
     if (isStaleSession(mySession, currentSession) || !continuity) return
     const watch = continuity
-    // The OS is only asked at decision points (going missing, about to be lost).
-    event = await pollContinuityWithPresence(watch, sources, Date.now(), () => probeWindowPresence(watch.sourceId))
+    // A gap ends the watch immediately; a recycled id cannot silently resume it.
+    event = pollStrictContinuity(watch, sources, Date.now())
   } catch (error) {
     console.warn('[Watch] continuity poll failed:', error)
     return
@@ -554,10 +554,12 @@ function notifyWindowAway(stillOpen: boolean, minimized: boolean): void {
 /** Halt exactly as the old target-lost path did: pause and ask for reselection. */
 function haltWatchAsLost(companionWindow: BrowserWindow, reason: LostReason, mySession: number): void {
   logWatchEvent('lost', { session: mySession, reason })
-  isPaused = true
-  if (continuityTimer) { clearInterval(continuityTimer); continuityTimer = null }
-  stopTurnPoll()
-  setWatchMessage(`"${watchedWindowName}" is no longer open. Show MyBuildy your coding agent again.`)
+  // Stop aborts in-flight provider work, invalidates its session, clears the
+  // selected source and cancels every timer. Pause alone leaves stale uploads alive.
+  stopAnalysisLoop(`window-lost:${reason}`)
+  setWatchMessage(reason === 'continuity-gap'
+    ? 'Watching stopped because the selected window disappeared from capture. Restore it and select it again. Minimizing can require reselection.'
+    : 'Watching stopped because the selected window is no longer available. Select your coding agent again.')
   notifyCompanionState(companionWindow, 'idle')
   void pushSendEligibility()
 }
@@ -1295,7 +1297,7 @@ function currentSendContext(): SendContext {
  * prompt id; main resolves the text itself and binds the paste, at click time,
  * to the exact prompt text and id, the active project, the watch session and
  * the watched window. The binding is re-checked after every await (and once
- * more immediately before the paste keystroke) and can be used only once.
+ * more immediately before dispatch; Stop cancels a pending native script) and can be used only once.
  * Serialized: a second request while one is in flight is rejected, not queued.
  */
 export async function handleSendPromptRequest(promptId: string): Promise<SendPromptResult> {
@@ -1361,11 +1363,14 @@ async function sendPromptRequest(promptId: string): Promise<SendPromptResult> {
       binding.promptText,
       { title: watchedWindowName || '', sourceId: binding.sourceId, ownerPid },
       () => sendAuthorizer.changed(binding, currentSendContext()),
+      stopSignal(),
     )
     void pushSendEligibility() // in-flight now → button disables while pasting
     const result = await sendPromise
     const changedAfterPaste = sendAuthorizer.changed(binding, currentSendContext())
-    pasted = result.sent
+    // A cancelled native dispatch has an uncertain delivery outcome; do not
+    // allow the same approval to be retried and possibly paste twice.
+    pasted = result.sent || result.reason === 'cancelled'
 
     // macOS permission problems: the guidance panel shows the fix inline (it got
     // the reason); the mascot label says it too, until the next good cycle.

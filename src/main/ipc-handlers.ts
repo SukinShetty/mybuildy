@@ -41,6 +41,7 @@ import { getProvider } from './ai/provider-registry'
 import { allProviderInfos } from './ai/provider-registry'
 import { testProviderConnection } from './ai/connection-test'
 import { fetchModelsForProvider } from './ai/model-fetch'
+import { modelListDiagnostic } from './ai/model-list-diagnostic'
 import { detectLocalServer, LOCAL_DEFAULT_ADDRESSES } from './ai/local-detect'
 import { hasVisionPass, recordVisionPass } from './vision-approvals'
 import {
@@ -283,8 +284,9 @@ export function registerIpcHandlers(
       const settings = resolveSettings({ ...nonSecret, provider, baseUrl })
       return await fetchModelsForProvider(settings)
     } catch (error) {
-      console.error('[IPC] LIST_MODELS error:', error)
-      return { models: [], error: mapProviderError(redactKnownSecrets(String(error))).message }
+      const diagnostic = modelListDiagnostic(error)
+      console.error('[IPC] LIST_MODELS error:', diagnostic)
+      return { models: [], error: mapProviderError(redactKnownSecrets(String(error))).message, diagnostic }
     }
   })
 
