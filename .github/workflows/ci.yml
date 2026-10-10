@@ -78,6 +78,38 @@ jobs:
       - name: E2E (packaged app)
         run: npm run test:e2e:packaged
 
+      # Test candidates only: no tags, Releases API, or public download changes.
+      - name: Prepare test installer identity and checksum
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path test-artifacts -Force | Out-Null
+          $installers = @(Get-ChildItem dist/MyBuildy-Setup-*.exe)
+          if ($installers.Count -ne 1) { throw 'Expected exactly one test installer.' }
+          Copy-Item $installers[0].FullName test-artifacts/
+          $source = (git rev-parse HEAD).Trim()
+          if ($source -ne $env:GITHUB_SHA) { throw 'Checkout SHA does not match this workflow run.' }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $name = $installers[0].Name
+          $hash = (Get-FileHash $installers[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $name" | Set-Content test-artifacts/SHA256SUMS.txt -Encoding ascii
+          @{
+            source_commit = $source
+            package_version = $version
+            workflow_run = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            purpose = 'Unreleased Windows test candidate, not a public release.'
+            filename = $name
+            sha256 = $hash
+            signing = 'Unsigned'
+            profile_warning = 'Same app identity and version as public MyBuildy. Installing can replace the existing app and uses its existing profile. Filename is not proof of source identity.'
+          } | ConvertTo-Json | Set-Content test-artifacts/BUILD-SOURCE.json -Encoding utf8
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mybuildy-windows-test-${{ github.sha }}
+          path: test-artifacts/*
+          if-no-files-found: error
+          retention-days: 7
+
   # The same Playwright Electron suite (dev build) on macOS: the setup wizard's
   # Windows and Mac paths both run here too (src/main/e2e-fakes.ts), next to the
   # real macOS behaviour of every other spec.
