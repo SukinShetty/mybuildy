@@ -6,6 +6,10 @@ All notable changes to MyBuildy are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Set up with a local model, no key needed** — on the first-run *Your AI key* step, **Use a local model instead (Ollama or LM Studio)** lets you finish setup without a cloud key. MyBuildy looks for Ollama and LM Studio at their default addresses on this computer and shows which is running; if one isn't, it says how to install or open it, with **Check again**. The next step lists that app's models with the ones that can read images first, marks them, and checks the first one automatically; if none can read images, it tells you to download one. Watching still starts only once the model passes the vision check. The cloud-key path is unchanged.
+
 ### Fixed
 
 - **AI requests time out on time** — the 60-second limit (120 seconds for local models) used to stop counting once the provider started answering, so an answer that stalled halfway could keep MyBuildy waiting far longer. Now the limit covers the whole answer, for every provider (Anthropic, OpenAI, Google Gemini, OpenRouter, Ollama, LM Studio and custom endpoints). When it passes, the request is stopped, the robot and Guidance tab say the provider took too long, and Analyze Now and Stop work straight away; an Analyze Now pressed while waiting still gets its analysis. Brainstorm replies may take longer as long as they keep arriving. LM Studio and custom endpoints now get the local-model limit for screen analysis too.

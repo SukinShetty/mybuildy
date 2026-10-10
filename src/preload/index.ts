@@ -18,6 +18,8 @@ import type {
   BuildyVoice,
   DeleteProjectResult,
   SetupInfo,
+  LocalProvider,
+  LocalServerStatus,
   SetupPermissionStatus,
   AnalysisResult,
   ProjectMemory,
@@ -225,6 +227,8 @@ const mybuildyAPI = {
     registerScreen: (): Promise<void> => ipcRenderer.invoke(IPC.SETUP_REGISTER_SCREEN),
     requestPaste: (): Promise<SetupPermissionStatus> => ipcRenderer.invoke(IPC.SETUP_REQUEST_PASTE),
     restart: (): Promise<void> => ipcRenderer.invoke(IPC.SETUP_RESTART),
+    // "Use a local model instead": is Ollama / LM Studio running here, and which models it has.
+    detectLocal: (provider: LocalProvider): Promise<LocalServerStatus> => ipcRenderer.invoke(IPC.SETUP_DETECT_LOCAL, provider),
   },
 
   // The robot: Hide (watching continues), Quit (after its confirmation), size.

@@ -569,6 +569,22 @@ export interface SetupPermissionStatus {
   automation: 'granted' | 'denied' | 'unknown'
 }
 
+// "Use a local model instead": what setup found on this computer (main/ai/local-detect.ts).
+export type LocalProvider = 'ollama' | 'lmstudio'
+/** Can this model read images? 'unknown' when the server doesn't say. */
+export type LocalVision = 'yes' | 'no' | 'unknown'
+export interface LocalModel {
+  id: string
+  label: string
+  vision: LocalVision
+}
+export interface LocalServerStatus {
+  provider: LocalProvider
+  running: boolean
+  baseUrl: string          // '' = found at the default address; otherwise the address that answered
+  models: LocalModel[]     // the ones that can read images first
+}
+
 export interface SetupInfo {
   needed: boolean          // show the wizard on launch
   step: string | null      // where to resume (saved on every step change)
@@ -664,6 +680,7 @@ export const IPC = {
   SETUP_OPEN_PANE:     'setup:open-pane',            // main window → main (open a macOS Privacy & Security pane)
   SETUP_REGISTER_SCREEN: 'setup:register-screen',    // main window → main (make macOS list MyBuildy under Screen Recording)
   SETUP_REQUEST_PASTE: 'setup:request-paste',        // main window → main (show the Accessibility + Automation prompts now)
+  SETUP_DETECT_LOCAL:  'setup:detect-local',         // main window → main (is Ollama / LM Studio running here, and its models)
   SETUP_RESTART:       'setup:restart',              // main window → main (quit and reopen; resumes at the saved step)
   HANDOFF_RESOLVED:    'guidance:handoff-resolved',  // guidance window → main → companion ("I'll decide" / "Skip for now": clear the "!" badge)
   COPY_TEXT:           'mybuildy:copy-text',          // renderer → main (write to clipboard; works in non-focusable windows)
