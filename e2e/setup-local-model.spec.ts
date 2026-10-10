@@ -7,6 +7,7 @@
 // keep the Windows step list on any OS.
 
 import { test, expect, type Page } from '@playwright/test'
+import * as path from 'path'
 import { launchMyBuildy, IS_PACKAGED_RUN, type MyBuildyApp } from './helpers'
 import { startFakeLocalServer, closedLocalPort, type FakeLocalServer } from '../src/main/ai/testing/fake-local-server'
 
@@ -20,6 +21,13 @@ type Api = {
 }
 const settingsOf = (page: Page) => page.evaluate(() => (window as unknown as Api).mybuildy.loadSettings())
 const wizardStep = (page: Page) => page.getByTestId('setup-wizard')
+/** Optional review screenshots: set E2E_SHOTS_DIR. */
+async function shot(page: Page, name: string): Promise<void> {
+  const dir = process.env['E2E_SHOTS_DIR']
+  if (!dir) return
+  await page.waitForTimeout(300)
+  await page.screenshot({ path: path.join(dir, `local-${name}.png`) })
+}
 const next = (page: Page) => page.getByRole('button', { name: 'Next', exact: true })
 
 test.describe('first-run setup with a local model, no cloud key', () => {
@@ -53,9 +61,15 @@ test.describe('first-run setup with a local model, no cloud key', () => {
 
     // The cloud-key path is still the first thing shown, unchanged.
     await expect(page.getByRole('button', { name: /OpenAI/ })).toBeVisible()
+    await shot(page, 'key')
     await page.getByRole('button', { name: 'Use a local model instead (Ollama or LM Studio)' }).click()
     await expect(page.getByRole('heading', { name: 'Use a model on this computer' })).toBeVisible()
     await expect(next(page)).toBeDisabled()
+    // …and back to the key path, which is unchanged, then local again.
+    await page.getByRole('button', { name: 'Use an AI key instead' }).click()
+    await expect(page.getByRole('heading', { name: 'Your AI key' })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Anthropic/ })).toBeVisible()
+    await page.getByRole('button', { name: 'Use a local model instead (Ollama or LM Studio)' }).click()
 
     // LM Studio is running here, but has no model that can read images.
     await page.getByRole('button', { name: /LM Studio/ }).click()
@@ -67,6 +81,7 @@ test.describe('first-run setup with a local model, no cloud key', () => {
     await expect(page.getByRole('button', { name: /text-only-model/ })).toBeVisible()
     await expect(page.getByRole('button', { name: /an-embedding/ })).toHaveCount(0) // never an embeddings model
     await expect(next(page)).toBeDisabled()
+    await shot(page, 'no-vision')
     // Trying it anyway: the real vision check says it can't see.
     await page.getByRole('button', { name: /text-only-model/ }).click()
     await expect(page.getByTestId('model-check')).not.toContainText('This model can see your screen', { timeout: 30_000 })
@@ -83,12 +98,14 @@ test.describe('first-run setup with a local model, no cloud key', () => {
       "Ollama isn't running on this computer. Install it from ollama.com, or open it if it's installed, then click Check again."
     )
     await expect(next(page)).toBeDisabled()
+    await shot(page, 'not-running')
 
     // The user starts Ollama (with one text model and one that can read images).
     ollama = await startFakeLocalServer({ kind: 'ollama', models: [{ name: 'words-only:7b' }, { name: 'sees-images:7b', vision: true }] }, ollamaPort)
     await page.getByRole('button', { name: 'Check again' }).click()
     await expect(page.getByTestId('local-status-ollama')).toHaveAttribute('data-running', 'true')
     await expect(page.getByTestId('local-guidance')).toHaveCount(0)
+    await shot(page, 'running')
     await next(page).click()
 
     // Your model: the one that can read images comes first, marked, and is checked automatically.
@@ -99,6 +116,7 @@ test.describe('first-run setup with a local model, no cloud key', () => {
     await expect(page.getByTestId('local-model-guidance')).toHaveCount(0)
     await expect(page.getByTestId('model-check')).toContainText('This model can see your screen', { timeout: 30_000 })
     await expect(next(page)).toBeEnabled()
+    await shot(page, 'model')
 
     const s = await settingsOf(page)
     expect(s.provider).toBe('ollama')

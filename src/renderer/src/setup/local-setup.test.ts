@@ -69,5 +69,5 @@ it('no message names a model', () => {
     localModelGuidance(status({}))?.message, localModelGuidance(status({ models: [{ id: 'x', label: 'x', vision: 'no' }] }))?.message,
     LOCAL_CHECKING_NOTE,
   ].join(' ')
-  expect(all).not.toMatch(/llava|llama|qwen|gemma|mistral|moondream|minicpm|pixtral|phi/i)
+  expect(all).not.toMatch(/\b(llava|llama|qwen|gemma|mistral|moondream|minicpm|pixtral|phi)/i) // "Ollama" is a provider name
 })

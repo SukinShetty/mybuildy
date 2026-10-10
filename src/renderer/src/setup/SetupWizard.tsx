@@ -10,7 +10,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import type {
-  ModelChoice, NonSecretSettings, ProviderType, RedactedSettings, SecretName, SetupPermissionStatus, WindowSource,
+  LocalProvider, LocalServerStatus, ModelChoice, NonSecretSettings, ProviderType, RedactedSettings, SecretName, SetupPermissionStatus, WindowSource,
 } from '../types'
 import { API_CREDITS_NOTE, CAPTURE_NOTICE_MESSAGE, PROVIDER_BILLING_URLS, dataDestinationNote, suggestsNextModel } from '../types'
 import { useAppStore } from '../store/useAppStore'
@@ -19,7 +19,10 @@ import { useRefreshWhileOpen } from '../components/useRefreshWhileOpen'
 import {
   type SetupStepId, type KeyProvider, KEY_PROVIDERS, ADVANCED_KEY_PROVIDERS, NOT_YET_TESTED_LABEL, READY_GOALS, OWN_GOAL_EXAMPLE, CLAUDE_CODE_INSTALL_URL,
   setupSteps, progressLabel, resumeStep, nextStep, previousStep, doneWhenText, agentInstructions,
+  LOCAL_SETUP_PROVIDERS, localServerGuidance, localModelGuidance, LOCAL_CHECKING_NOTE,
 } from './setup-model'
+
+const isLocalSetupProvider = (p: string): p is LocalProvider => p === 'ollama' || p === 'lmstudio'
 
 const SECRET_FOR: Record<string, SecretName> = {
   anthropic: 'anthropicApiKey', openai: 'openaiApiKey', gemini: 'geminiApiKey', openrouter: 'openrouterApiKey',
@@ -159,7 +162,17 @@ function WelcomeStep({ onStart }: { onStart: () => void }): React.ReactElement {
 
 // ─── Your AI key ─────────────────────────────────────────────────────────────
 
-function KeyStep({ allow, onBeforeNext }: StepProps): React.ReactElement {
+// Two ways through this step: an AI key (cloud), or "Use a local model instead"
+// (Ollama / LM Studio on this computer, no key). Each registers its own Next.
+function KeyStep(props: StepProps): React.ReactElement {
+  const provider = useAppStore((s) => s.settings.provider)
+  const [local, setLocal] = useState(isLocalSetupProvider(provider))
+  return local
+    ? <LocalServerStep {...props} onUseKey={() => setLocal(false)} />
+    : <CloudKeyStep {...props} onUseLocal={() => setLocal(true)} />
+}
+
+function CloudKeyStep({ allow, onBeforeNext, onUseLocal }: StepProps & { onUseLocal: () => void }): React.ReactElement {
   const settings = useAppStore((s) => s.settings)
   const setSettings = useAppStore((s) => s.setSettings)
   const allProviders = [...KEY_PROVIDERS, ...ADVANCED_KEY_PROVIDERS]
@@ -229,9 +242,122 @@ function KeyStep({ allow, onBeforeNext }: StepProps): React.ReactElement {
           </a>
         </div>
       )}
-      <p style={S.small}>
-        Want to run a model on your own computer instead (Ollama, LM Studio)? You can choose it later in Settings.
+      <div style={S.localLink}>
+        <button type="button" className="btn-ghost" onClick={onUseLocal} data-testid="use-local">
+          Use a local model instead (Ollama or LM Studio)
+        </button>
+        <div style={S.small}>No key needed: the model runs on your computer.</div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Use a local model instead: which server ─────────────────────────────────
+
+function useLocalDetection(): {
+  statuses: Partial<Record<LocalProvider, LocalServerStatus>>
+  checking: Partial<Record<LocalProvider, boolean>>
+  detect: (p: LocalProvider) => Promise<LocalServerStatus | null>
+} {
+  const [statuses, setStatuses] = useState<Partial<Record<LocalProvider, LocalServerStatus>>>({})
+  const [checking, setChecking] = useState<Partial<Record<LocalProvider, boolean>>>({})
+  const detect = useCallback(async (p: LocalProvider): Promise<LocalServerStatus | null> => {
+    setChecking((c) => ({ ...c, [p]: true }))
+    try {
+      const st = await window.mybuildy.setup.detectLocal(p)
+      setStatuses((s) => ({ ...s, [p]: st }))
+      return st
+    } catch {
+      const st: LocalServerStatus = { provider: p, running: false, baseUrl: '', models: [] }
+      setStatuses((s) => ({ ...s, [p]: st }))
+      return st
+    } finally {
+      setChecking((c) => ({ ...c, [p]: false }))
+    }
+  }, [])
+  return { statuses, checking, detect }
+}
+
+function LocalServerStep({ allow, onBeforeNext, onUseKey }: StepProps & { onUseKey: () => void }): React.ReactElement {
+  const settings = useAppStore((s) => s.settings)
+  const setSettings = useAppStore((s) => s.setSettings)
+  const [provider, setProvider] = useState<LocalProvider | null>(isLocalSetupProvider(settings.provider) ? settings.provider : null)
+  const { statuses, checking, detect } = useLocalDetection()
+  const started = useRef(false)
+
+  // Look for both servers straight away, so each card says whether it is running.
+  useEffect(() => {
+    if (started.current) return
+    started.current = true
+    void detect('ollama')
+    void detect('lmstudio')
+  }, [detect])
+
+  const status = provider ? statuses[provider] : undefined
+  const busy = provider ? !!checking[provider] : false
+
+  useEffect(() => {
+    allow(!!provider && !!status?.running && !busy)
+    onBeforeNext(async () => {
+      if (!provider || !status?.running) return false
+      const same = provider === settings.provider && status.baseUrl === settings.baseUrl
+      await window.mybuildy.saveSettings(nonSecretFrom(settings, { provider, baseUrl: status.baseUrl, modelId: same ? settings.modelId : '' }))
+      setSettings(await window.mybuildy.loadSettings())
+      return true
+    })
+  }, [provider, status, busy, settings, allow, onBeforeNext, setSettings])
+
+  const meta = LOCAL_SETUP_PROVIDERS.find((p) => p.id === provider) ?? null
+  const guidance = status ? localServerGuidance(status) : null
+
+  return (
+    <div>
+      <h2 style={S.stepTitle}>Use a model on this computer</h2>
+      <p style={S.text}>
+        No key needed. The model runs on your computer, so your screenshots and project memory stay on it. Your
+        computer needs to be powerful enough to run a model that can read images.
       </p>
+      <div style={S.cardGrid}>
+        {LOCAL_SETUP_PROVIDERS.map((p) => {
+          const st = statuses[p.id]
+          const isChecking = !!checking[p.id] || !st
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => { setProvider(p.id); void detect(p.id) }}
+              className={`setup-choice${provider === p.id ? ' is-on' : ''}`}
+              aria-pressed={provider === p.id}
+            >
+              <div style={S.choiceTitle}>{p.label}</div>
+              <div style={S.choiceSub}>{p.blurb}</div>
+              <div
+                style={st?.running && !isChecking ? S.localOk : S.untested}
+                data-testid={`local-status-${p.id}`}
+                data-running={isChecking ? 'checking' : String(!!st?.running)}
+              >
+                {isChecking ? 'Checking…' : st?.running ? '● Running' : 'Not running'}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+      {meta && guidance && !busy && <div style={S.error} role="status" data-testid="local-guidance">{guidance}</div>}
+      {meta && (
+        <div style={S.actionRow}>
+          <button type="button" className="btn-secondary" onClick={() => void detect(meta.id)} disabled={busy}>
+            {busy ? 'Checking…' : 'Check again'}
+          </button>
+          {status && !status.running && (
+            <a href={meta.site} target="_blank" rel="noreferrer" className="btn-ghost" style={S.actionLink}>
+              Get {meta.label}
+            </a>
+          )}
+        </div>
+      )}
+      <button type="button" className="btn-ghost" onClick={onUseKey} style={S.skipLink}>
+        Use an AI key instead
+      </button>
     </div>
   )
 }
@@ -240,7 +366,122 @@ function KeyStep({ allow, onBeforeNext }: StepProps): React.ReactElement {
 
 const CHECK_FAILED_MESSAGE = 'Something went wrong. Try again, or try the next recommended model.'
 
-function ModelStep({ allow, onBeforeNext }: StepProps): React.ReactElement {
+function ModelStep(props: StepProps): React.ReactElement {
+  const provider = useAppStore((s) => s.settings.provider)
+  return isLocalSetupProvider(provider) ? <LocalModelStep {...props} provider={provider} /> : <CloudModelStep {...props} />
+}
+
+// ─── Use a local model instead: which model ──────────────────────────────────
+
+function LocalModelStep({ allow, onBeforeNext, provider }: StepProps & { provider: LocalProvider }): React.ReactElement {
+  const settings = useAppStore((s) => s.settings)
+  const setSettings = useAppStore((s) => s.setSettings)
+  const { statuses, checking: detecting, detect } = useLocalDetection()
+  const status = statuses[provider] ?? null
+  const [chosen, setChosen] = useState<string>(settings.modelId)
+  const [checking, setChecking] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const started = useRef(false)
+  const label = LOCAL_SETUP_PROVIDERS.find((p) => p.id === provider)?.label ?? provider
+
+  const check = useCallback(async (modelId: string): Promise<void> => {
+    setChosen(modelId)
+    setChecking(true)
+    setResult(null)
+    try {
+      const s = useAppStore.getState().settings
+      await window.mybuildy.saveSettings(nonSecretFrom(s, { modelId }))
+      const r = await window.mybuildy.testConnection(nonSecretFrom(s, { modelId }))
+      setResult({ ok: r.visionPassed, message: r.visionPassed ? 'This model can see your screen.' : r.message })
+      setSettings(await window.mybuildy.loadSettings())
+    } catch {
+      setResult({ ok: false, message: CHECK_FAILED_MESSAGE })
+    } finally {
+      setChecking(false)
+    }
+  }, [setSettings])
+
+  // Look again (on arrival and on Check again); the server may have moved.
+  const look = useCallback(async (autoCheck: boolean): Promise<void> => {
+    const st = await detect(provider)
+    if (!st) return
+    const s = useAppStore.getState().settings
+    if (st.running && st.baseUrl !== s.baseUrl) {
+      await window.mybuildy.saveSettings(nonSecretFrom(s, { baseUrl: st.baseUrl }))
+      setSettings(await window.mybuildy.loadSettings())
+    }
+    if (!autoCheck || !st.running) return
+    const current = useAppStore.getState().settings.modelId
+    if (current && st.models.some((m) => m.id === current) && (await window.mybuildy.getVisionStatus(provider, current)).passed) {
+      setResult({ ok: true, message: 'This model can see your screen.' })
+      return
+    }
+    const first = st.models.find((m) => m.vision === 'yes')
+    if (first) await check(first.id)
+  }, [detect, provider, check, setSettings])
+
+  useEffect(() => {
+    if (started.current) return
+    started.current = true
+    void look(true)
+  }, [look])
+
+  useEffect(() => {
+    allow(!!result?.ok && !checking)
+    onBeforeNext(null)
+  }, [result, checking, allow, onBeforeNext])
+
+  const serverGuidance = status ? localServerGuidance(status) : null
+  const modelGuidance = status ? localModelGuidance(status) : null
+  const busy = !!detecting[provider]
+
+  return (
+    <div>
+      <h2 style={S.stepTitle}>Your model</h2>
+      <p style={S.text}>
+        Pick a model from {label}. MyBuildy needs one that can read images, and checks that it can see your screen.
+      </p>
+      {!status && <div style={S.small}>Looking for models in {label}…</div>}
+      {serverGuidance && !busy && <div style={S.error} role="status" data-testid="local-guidance">{serverGuidance}</div>}
+      {modelGuidance && !busy && (
+        <div style={modelGuidance.tone === 'problem' ? S.error : S.note} role="status" data-testid="local-model-guidance">
+          {modelGuidance.message}
+        </div>
+      )}
+      <div style={S.list} data-testid="local-models">
+        {(status?.models ?? []).map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            onClick={() => void check(m.id)}
+            disabled={checking}
+            className={`setup-choice setup-model-row${chosen === m.id ? ' is-on' : ''}`}
+            aria-pressed={chosen === m.id}
+          >
+            <span>{m.label}</span>
+            {m.vision === 'yes' && <span style={S.badge}>Can read images</span>}
+            {chosen === m.id && result?.ok && <span style={S.tick} aria-label="Check passed">✓</span>}
+          </button>
+        ))}
+      </div>
+      <div style={S.actionRow}>
+        <button type="button" className="btn-secondary" onClick={() => void look(false)} disabled={busy || checking}>
+          {busy ? 'Checking…' : 'Check again'}
+        </button>
+      </div>
+      {checking && <div style={S.small}>{LOCAL_CHECKING_NOTE}</div>}
+      {result && (
+        <div style={result.ok ? S.okLine : S.error} data-testid="model-check">
+          {result.ok ? '✓ ' : ''}{result.message}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Your model (cloud) ──────────────────────────────────────────────────────
+
+function CloudModelStep({ allow, onBeforeNext }: StepProps): React.ReactElement {
   const settings = useAppStore((s) => s.settings)
   const setSettings = useAppStore((s) => s.setSettings)
   const [models, setModels] = useState<ModelChoice[] | null>(null)
@@ -756,4 +997,6 @@ const S = {
   skipLink: { marginTop: 14, fontSize: 12.5 },
   pickerWrap: { marginTop: 14, border: '1px solid var(--color-border)', borderRadius: 10, overflow: 'hidden' as const },
   bigTick: { fontSize: 48, color: 'var(--color-success)' },
+  localLink: { marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--color-border)' },
+  localOk: { fontSize: 11, fontWeight: 600, color: 'var(--color-success)', marginTop: 4 },
 }

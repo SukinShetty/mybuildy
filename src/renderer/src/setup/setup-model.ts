@@ -1,6 +1,8 @@
 // setup-model.ts — pure data and rules for the first-run setup wizard
 // (SetupWizard.tsx). No React, no window.* — unit-tested in setup-model.test.ts.
 
+import type { LocalProvider, LocalServerStatus } from '../types'
+
 export type SetupStepId =
   | 'welcome'
   | 'key'
@@ -140,3 +142,47 @@ export function agentInstructions(platform: string): AgentInstructions {
 }
 
 export const CLAUDE_CODE_INSTALL_URL = 'https://docs.anthropic.com/en/docs/claude-code/setup'
+
+// ─── Use a local model instead (no key) ──────────────────────────────────────
+// Provider names only in this copy — never a model's name.
+
+export interface LocalSetupProvider {
+  id: LocalProvider
+  label: string
+  blurb: string
+  site: string
+}
+
+export const LOCAL_SETUP_PROVIDERS: LocalSetupProvider[] = [
+  { id: 'ollama', label: 'Ollama', blurb: 'Free app that runs models on your computer', site: 'https://ollama.com' },
+  { id: 'lmstudio', label: 'LM Studio', blurb: 'Free app that runs models on your computer', site: 'https://lmstudio.ai' },
+]
+
+const localLabel = (p: LocalProvider): string => LOCAL_SETUP_PROVIDERS.find((x) => x.id === p)?.label ?? p
+
+/** What to do when the chosen local server isn't answering; null when it is running. */
+export function localServerGuidance(status: LocalServerStatus): string | null {
+  if (status.running) return null
+  return status.provider === 'ollama'
+    ? "Ollama isn't running on this computer. Install it from ollama.com, or open it if it's installed, then click Check again."
+    : "LM Studio's local server isn't running. Install LM Studio from lmstudio.ai, or open it, start its local server, then click Check again."
+}
+
+/** What to tell the user about the models a running local server has; null when one can read images. */
+export function localModelGuidance(status: LocalServerStatus): { tone: 'problem' | 'info'; message: string } | null {
+  if (!status.running) return null
+  const label = localLabel(status.provider)
+  if (status.models.length === 0) {
+    return { tone: 'problem', message: `${label} is running, but has no models yet. In ${label}, download a model that can read images (a vision model), then click Check again.` }
+  }
+  if (status.models.some((m) => m.vision === 'yes')) return null
+  if (status.models.every((m) => m.vision === 'no')) {
+    return {
+      tone: 'problem',
+      message: `None of your ${label} models can read images, and MyBuildy needs one to see your screen. In ${label}, download a model that can read images (a vision model), then click Check again. You can still try one below.`,
+    }
+  }
+  return { tone: 'info', message: "MyBuildy can't tell which of these models can read images. Pick one, and MyBuildy checks that it can see your screen." }
+}
+
+export const LOCAL_CHECKING_NOTE = 'Checking that this model can see your screen… A model on your computer can take a minute to start the first time.'

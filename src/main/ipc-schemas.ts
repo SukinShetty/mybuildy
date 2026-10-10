@@ -100,6 +100,8 @@ export const nonSecretSettingsSchema = z.object({
 })
 
 // Live model list request — main fetches with the STORED key, never a renderer key.
+export const localProviderSchema = z.enum(['ollama', 'lmstudio'])
+
 export const listModelsSchema = z.object({
   provider: providerEnum,
   baseUrl: z.string().max(2000),

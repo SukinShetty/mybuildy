@@ -8,7 +8,7 @@ import { providerHttpError, readJson, mapProviderError } from './ai/provider-err
 import { providerFetch, withCancellation, CancelledError } from './ai/fetch-with-timeout'
 import { guardedSender } from './project-guard'
 import { watchLogDir, logWatchEvent } from './watch-log'
-import { e2eFakes, FAKE_MODELS, fakeTerminalSourceId } from './e2e-fakes'
+import { e2eFakes, isE2eDevRun, FAKE_MODELS, fakeTerminalSourceId } from './e2e-fakes'
 import { hideRobot } from './robot-visibility'
 import { applyRobotScale, getRobotScale } from './companion-window'
 import { saveRobotScale } from './robot-prefs'
@@ -41,6 +41,7 @@ import { getProvider } from './ai/provider-registry'
 import { allProviderInfos } from './ai/provider-registry'
 import { testProviderConnection } from './ai/connection-test'
 import { fetchModelsForProvider } from './ai/model-fetch'
+import { detectLocalServer, LOCAL_DEFAULT_ADDRESSES } from './ai/local-detect'
 import { hasVisionPass, recordVisionPass } from './vision-approvals'
 import {
   startWatching, stopAnalysisLoop, pauseAnalysisLoop, resumeAnalysisLoop, setQuietMode, handleQuestion, handleSendPromptRequest, stopSignal,
@@ -52,7 +53,7 @@ import {
   goalPartialSchema, shortText, sourceId as sourceIdSchema, windowName as windowNameSchema,
   confidenceEnum, chatHistorySchema, promptIdSchema,
   projectIdSchema, projectCreateSchema, projectRenameSchema,
-  listModelsSchema, visionStatusSchema, macPermissionEnum,
+  listModelsSchema, visionStatusSchema, macPermissionEnum, localProviderSchema,
 } from './ipc-schemas'
 import { permissionSettingsUrl, screenPermissionMissing } from './mac-permissions-core'
 import {
@@ -252,8 +253,9 @@ export function registerIpcHandlers(
     try {
       assertFromMainWindow(event, mainWcId(), 'TEST_CONNECTION')
       const settings = resolveValidatedSettings('TEST_CONNECTION', settingsRaw)
-      if (e2eFakes()) {
-        // e2e only (e2e-fakes.ts): a local "pass" — no provider is called.
+      if (e2eFakes() && settings.provider !== 'ollama' && settings.provider !== 'lmstudio') {
+        // e2e only (e2e-fakes.ts): a local "pass" — no cloud provider is called.
+        // Local providers are checked for real (e2e runs its own local servers).
         recordVisionPass(settings.provider, settings.modelId, settings.apiKey)
         return { success: true, message: 'Vision check passed — this model can see your screen. (1ms)', latencyMs: 1, visionPassed: true, errorKind: null }
       }
@@ -784,6 +786,18 @@ export function registerIpcHandlers(
       step: state?.step ?? null,
       platform: setupPlatform(),
     }
+  })
+
+  // "Use a local model instead": the addresses are main's (the defaults), never
+  // the renderer's. e2e dev runs may point them at the test's own local servers.
+  ipcMain.handle(IPC.SETUP_DETECT_LOCAL, async (event, raw: unknown) => {
+    assertFromMainWindow(event, mainWcId(), 'SETUP_DETECT_LOCAL')
+    const provider = parseInput(localProviderSchema, 'SETUP_DETECT_LOCAL', raw)
+    const override = isE2eDevRun() ? process.env[provider === 'ollama' ? 'MYBUILDY_E2E_OLLAMA_URL' : 'MYBUILDY_E2E_LMSTUDIO_URL'] : undefined
+    if (override && isAllowedBaseUrl(provider, override)) {
+      return detectLocalServer(provider, [override], { defaultAddress: LOCAL_DEFAULT_ADDRESSES[provider][0] })
+    }
+    return detectLocalServer(provider)
   })
 
   ipcMain.handle(IPC.SETUP_SAVE_STEP, async (event, stepRaw: unknown) => {
