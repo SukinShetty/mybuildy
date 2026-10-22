@@ -28,8 +28,8 @@ import type { SendEligibility, SendPromptResult, TerminalState } from '../render
  */
 export function sanitizePromptForSend(promptText: string): string {
   return (promptText || '')
-    .replace(/[\r\n]+/g, ' ')
-    .replace(new RegExp('[\\u0000-\\u001F\\u007F]', 'g'), '')
+    .replace(/[\r\n\u0085\u2028\u2029]+/g, ' ')
+    .replace(new RegExp('[\\u0000-\\u001F\\u007F-\\u009F]', 'g'), '')
     .trim()
 }
 
