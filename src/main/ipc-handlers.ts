@@ -8,7 +8,7 @@ import { providerHttpError, readJson, mapProviderError } from './ai/provider-err
 import { providerFetch, withCancellation, CancelledError } from './ai/fetch-with-timeout'
 import { guardedSender } from './project-guard'
 import { watchLogDir, logWatchEvent } from './watch-log'
-import { e2eFakes, isE2eDevRun, FAKE_MODELS, fakeTerminalSourceId } from './e2e-fakes'
+import { e2eFakes, isE2eDevRun, fakeModels, fakeTerminalSourceId } from './e2e-fakes'
 import { hideRobot } from './robot-visibility'
 import { applyRobotScale, getRobotScale } from './companion-window'
 import { saveRobotScale } from './robot-prefs'
@@ -279,7 +279,7 @@ export function registerIpcHandlers(
       }
       // Use the on-disk settings but target the REQUESTED provider/baseUrl so
       // the Settings UI can browse models before saving. Keys stay main-owned.
-      if (e2eFakes()) return { models: FAKE_MODELS, error: null } // e2e only (e2e-fakes.ts)
+      if (e2eFakes()) return { models: fakeModels(), error: null } // e2e only (e2e-fakes.ts)
       const nonSecret = await loadNonSecretSettings()
       const settings = resolveSettings({ ...nonSecret, provider, baseUrl })
       return await fetchModelsForProvider(settings)
