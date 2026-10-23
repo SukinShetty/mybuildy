@@ -97,11 +97,24 @@ export function isGoalReached(analysis: AnalysisResult): boolean {
   return TEXT_FIELDS.some((field) => claimsGoalReached(analysis[field]))
 }
 
+function pointsAtPrompt(text: string | undefined): boolean {
+  return !!text && /\b(prompt|text)\s+below\b|\bpaste\b/i.test(text)
+}
+
 /** Everything the panel shows goes through here (first display and every patch). */
 export function prepareForDisplay(analysis: AnalysisResult): AnalysisResult {
   let out = reconcileWithVerdict(analysis)
   const goalReached = isGoalReached(out)
   if (!!out.goalReached !== goalReached) out = { ...out, goalReached }
+  // Never point at a prompt that is not there ("Paste the prompt below…").
+  if (!(out.nextPrompt || '').trim() && pointsAtPrompt(out.bestNextMove)) {
+    out = {
+      ...out,
+      bestNextMove: out.needsHumanJudgment
+        ? 'Answer the question above first. MyBuildy will suggest the next prompt after that.'
+        : 'No prompt to paste right now. MyBuildy will suggest one on its next look.',
+    }
+  }
   if (out.needsHumanJudgment) {
     const text = userFacingHandoff(out.humanJudgmentReason)
     if (text !== out.humanJudgmentReason) out = { ...out, humanJudgmentReason: text }
