@@ -13,7 +13,7 @@ All notable changes to MyBuildy are documented here. The format follows
 
 ### Changed
 
-- Installers are about 41 MB larger (the bundled listening model). `npm run fetch:voice` now also downloads it (pinned revision, checksums verified).
+- Installers are about 64 MB larger (the bundled listening model). `npm run fetch:voice` now also downloads it (pinned revision, checksums verified).
 
 ## [0.1.0] — 2026-09-23
 

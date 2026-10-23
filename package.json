@@ -71,7 +71,7 @@
         "to": "whisper",
         "filter": [
           "**/*.json",
-          "**/encoder_model_quantized.onnx",
+          "**/encoder_model.onnx",
           "**/decoder_model_merged_quantized.onnx"
         ]
       }

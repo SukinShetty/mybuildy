@@ -1,5 +1,5 @@
 // fetch-listen-model.mjs — puts MyBuildy's on-device listening model (a small
-// English speech-to-text model, ~41 MB, 8-bit) in resources/whisper/, where
+// English speech-to-text model, ~64 MB) in resources/whisper/, where
 // electron-builder bundles it into the installer (package.json
 // build.extraResources) and a dev run reads it. Used only for the optional
 // "MyBuildy" wake word and the mic button; audio never leaves the computer.
@@ -22,7 +22,8 @@ const FILES = {
   'preprocessor_config.json': 'a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d',
   'tokenizer.json': '5eb60cec1e77aeeb6869a2bb5a8e01a84c3fe5d072d75369343021fe6f5310d0',
   'tokenizer_config.json': '93879c3dccdd4b976f709acd85b44778873f30c275e67026f30ca1e4c975230c',
-  'onnx/encoder_model_quantized.onnx': 'e93ec822f16a8fd264e7de972ad17d615ea7334b75a52d54c50c2e18dd503a25',
+  // full-precision encoder: the 8-bit one gave different (often wrong) text for the same audio
+  'onnx/encoder_model.onnx': '8c361b9430a5ef6619ee64b7fe06c725df19f36d508cc8b847064b34a888a3fe',
   'onnx/decoder_model_merged_quantized.onnx': 'c0592d0749413c960569e1c7fb806b060d5d18f3ebad4a95cbf9a77dc6e9be52',
 }
 const OUT = join(process.cwd(), 'resources', 'whisper', REPO)

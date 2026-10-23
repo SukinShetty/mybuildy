@@ -67,6 +67,16 @@ def train(tdir, outp):
             else:
                 for k in range(15, len(E), 2): X[split].append(E[k - 15:k + 1].ravel()); Y[split].append(0)
         if n % 500 == 0: print('features', n, len(man), flush=True)
+    # real human speech (LibriSpeech dev-clean, even-numbered speakers only; odd ones are the test stream)
+    lib = os.environ.get('LIBRI')
+    if lib:
+        import soundfile as sf, glob
+        files = sorted(f for f in glob.glob(lib + '/*/*/*.flac') if int(f.split('/')[-3]) % 2 == 0)
+        for j, fp in enumerate(files[::2]):
+            a, _ = sf.read(fp, dtype='float32'); a = augment(rng, a[:SR * 12], gens); E = emb(a)
+            split = 'va' if j % 6 == 0 else 'tr'
+            for k in range(15, len(E), 3): X[split].append(E[k - 15:k + 1].ravel()); Y[split].append(0)
+            if j % 100 == 0: print('libri', j, flush=True)
     Xtr, Ytr = np.array(X['tr'], np.float32), np.array(Y['tr']); Xva, Yva = np.array(X['va'], np.float32), np.array(Y['va'])
     print('train', Xtr.shape, Ytr.mean(), 'val', Xva.shape, Yva.mean(), flush=True)
     w = np.where(Ytr == 1, 1.0, 1.0)
@@ -112,8 +122,19 @@ def evaluate(setdir, modelp, outp, shard='0/1'):
             s = scores(model, x)
             f.write(json.dumps({'id': i, 'kind': m['kind'], 'source': m['source'], 'voice': m.get('voice'), 'cond': cond, 'said': m['text'], 'max': round(float(s.max()), 4) if len(s) else 0}) + '\n'); f.flush()
     # long non-wake audio in 5-minute chunks: every score peak above 0.3 (thresholding later), 2 s refractory
-    for idx, x in wa.stream_chunks():
-        i = f'stream{idx}'
+    def libri_chunks():  # real human read speech, speakers never used in training, ~2 h
+        import soundfile as sf, glob
+        files = sorted(f for f in glob.glob(os.environ['LIBRI'] + '/*/*/*.flac') if int(f.split('/')[-3]) % 2 == 1)
+        buf = []; tot = 0; idx = 0
+        for fp in files:
+            a, _ = sf.read(fp, dtype='float32'); buf += [a, np.zeros(SR // 2, np.float32)]; tot += len(a) + SR // 2
+            if tot >= SR * 300:
+                yield f'libri{idx}', np.concatenate(buf); buf = []; tot = 0; idx += 1
+                if idx >= 24: return
+    chunks = [(f'stream{i}', x) for i, x in wa.stream_chunks()]
+    import itertools
+    for i, x in itertools.chain(((a, b) for a, b in chunks), libri_chunks() if os.environ.get('LIBRI') else []):
+        idx = i
         if i in done or zlib.crc32(i.encode()) % n != sh: continue
         s = scores(model, x); peaks = []; last = -99
         for k, v in enumerate(s):

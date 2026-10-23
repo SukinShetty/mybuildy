@@ -32,7 +32,7 @@ async function handle(message: FromMain): Promise<void> {
       // (pipeline is called through a loose type: its full overloads are too big for TypeScript.)
       const make = pipeline as unknown as (task: string, model: string, options: Record<string, unknown>) => Promise<AutomaticSpeechRecognitionPipeline>
       asr = (await make('automatic-speech-recognition', MODEL, {
-        dtype: { encoder_model: 'q8', decoder_model_merged: 'q8' },
+        dtype: { encoder_model: 'fp32', decoder_model_merged: 'q8' },
         device: 'cpu',
         // One thread: on multi-core CPUs the 8-bit model's threaded maths gave
         // DIFFERENT text for the same audio from run to run (measured: 3 of 6
