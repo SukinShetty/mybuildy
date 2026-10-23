@@ -11,7 +11,7 @@ import { KokoroTTS } from 'kokoro-js'
 const root = join(import.meta.dirname, '..', '..')
 const [out, edge] = process.argv.slice(2)
 mkdirSync(join(out, 'clips'), { recursive: true })
-const data = JSON.parse(readFileSync(join(root, 'scripts', 'eval-wake-word-data.json'), 'utf8'))
+const data = JSON.parse(readFileSync(join(root, 'scripts', process.env.WAKE_DATA ?? 'eval-wake-word-data.json'), 'utf8'))
 const manifestPath = join(out, 'manifest.json')
 const manifest = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')) : []
 const have = new Set(manifest.map((m) => m.file))

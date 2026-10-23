@@ -7,7 +7,7 @@ import edge_tts
 
 out = sys.argv[1]
 os.makedirs(out, exist_ok=True)
-data = json.load(open(os.path.join(os.path.dirname(__file__), 'eval-wake-word-data.json')))
+data = json.load(open(os.path.join(os.path.dirname(__file__), os.environ.get('WAKE_DATA', 'eval-wake-word-data.json'))))
 VOICES = ['en-IN-NeerjaNeural', 'en-IN-PrabhatNeural', 'en-AU-NatashaNeural', 'en-NG-AbeoNeural',
           'en-ZA-LeahNeural', 'en-SG-WayneNeural', 'en-US-GuyNeural']
 RATES = ['-15%', '+0%', '+20%']

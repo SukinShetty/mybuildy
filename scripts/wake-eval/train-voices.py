@@ -51,6 +51,21 @@ We built the whole thing in a week
 Let me think about it for a minute
 Could you explain the stack trace
 Restart the dev server'''.strip().split('\n')
+if os.environ.get('PHRASE') == 'hey':  # "Hey Buildy"
+    VOICES += ['hi-IN-MadhurNeural', 'hi-IN-SwaraNeural', 'ta-IN-ValluvarNeural', 'ta-IN-PallaviNeural', 'te-IN-MohanNeural', 'te-IN-ShrutiNeural',
+               'kn-IN-GaganNeural', 'kn-IN-SapnaNeural', 'mr-IN-ManoharNeural', 'ml-IN-MidhunNeural', 'bn-IN-BashkarNeural', 'gu-IN-NiranjanNeural']  # Indian-accented English
+    POS = ['Hey Buildy', 'Hey Buildy.', 'Hey, Buildy', 'Hey Buildy?', 'Hey Buildy!', 'Hey buildy,']
+    NEAR = ['hey buddy', 'hey baby', 'a building', 'hey bill', 'they build', 'hey body', 'hey billy', 'hey beauty', 'hey bully', 'hey birdie',
+            'hey belly', 'hey bitty', 'hey goody', 'hey moody', 'hey bud', 'the building', 'hey builder', 'buildy', 'hey kitty', 'hey ready',
+            'hey city', 'hey betty', 'play buddy', 'hey bloody', 'hey but he', 'hey been the', 'hey willy', 'hey biddy', 'hey bailey', 'hey, build it']
+    GEN += '''Hey buddy, how was the trip
+Hey baby, dinner is ready
+They build houses near the river
+Hey Bill, can you send the file
+A building fell down in the storm
+Hey, nobody told me about that
+Hey Billy, come here
+Hey, build it again please'''.split('\n')
 jobs = []
 for v in VOICES:
     for i, t in enumerate(POS):
