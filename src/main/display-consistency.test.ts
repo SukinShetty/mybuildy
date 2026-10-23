@@ -140,3 +140,34 @@ describe('goal reached: the robot celebrates only a verified goal', () => {
     expect(prepareForDisplay(analysis({ verification: verified, goalAlignment: 'blocked', builderNote: 'Goal reached!' })).goalReached).toBeFalsy()
   })
 })
+
+describe('prepareForDisplay — never points at a prompt that is not there', () => {
+  it('rewrites "Paste the prompt below" when there is no prompt (hand-off)', () => {
+    const out = prepareForDisplay(analysis({
+      nextPrompt: '',
+      bestNextMove: 'Paste the prompt below into Claude Code and press Enter.',
+      needsHumanJudgment: true,
+      humanJudgmentReason: 'Photos or sharing next?',
+    }))
+    expect(out.bestNextMove).not.toMatch(/paste|below/i)
+    expect(out.bestNextMove).toMatch(/answer the question/i)
+  })
+
+  it('rewrites it without a hand-off too', () => {
+    const out = prepareForDisplay(analysis({ nextPrompt: '', bestNextMove: 'Paste the prompt below into Claude Code.' }))
+    expect(out.bestNextMove).not.toMatch(/prompt below/i)
+  })
+
+  it('leaves it alone when the prompt is there', () => {
+    const out = prepareForDisplay(analysis({ nextPrompt: 'Add the save button.', bestNextMove: 'Paste the prompt below into Claude Code.' }))
+    expect(out.bestNextMove).toBe('Paste the prompt below into Claude Code.')
+  })
+
+  it('a grader hand-off keeps the prompt on screen next to the decision card', () => {
+    const base = analysis({ nextPrompt: 'Add photo upload to the recipe form.', bestNextMove: 'Paste the prompt below into Claude Code.' })
+    const out = prepareForDisplay({ ...base, ...buildQualityPatch(base, { valid: false, humanDirected: true, userQuestion: 'Photos or sharing next?' }) })
+    expect(out.needsHumanJudgment).toBe(true)
+    expect(out.nextPrompt).toBe('Add photo upload to the recipe form.')
+    expect(out.bestNextMove).toBe('Paste the prompt below into Claude Code.')
+  })
+})

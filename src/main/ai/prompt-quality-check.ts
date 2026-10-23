@@ -86,9 +86,9 @@ export async function checkPromptQuality(
 /**
  * Pure policy: turn a grader verdict into the display patch (Phase 3B).
  *
- *   - humanDirected → the analysis BECOMES a hand-off (Block 6): the prompt is
- *     dropped entirely (empty nextPrompt/expectedOutcome) and needsHumanJudgment
- *     is set. The card shows only the grader's userQuestion (cleaned by
+ *   - humanDirected → the analysis also becomes a hand-off (Block 6):
+ *     needsHumanJudgment is set, and the prompt is KEPT (never blank a prompt
+ *     already on screen; deferring the decision must leave it usable). The card shows only the grader's userQuestion (cleaned by
  *     userFacingHandoff) — never its reasoning, which stays in the debug log. An improvedPrompt is deliberately IGNORED here — a prompt that
  *     asked the human a question must not be silently rewritten into an
  *     instruction the user never approved.
@@ -101,9 +101,10 @@ export function buildQualityPatch(
   result: PromptQualityResult
 ): Partial<AnalysisResult> | null {
   if (result.humanDirected) {
+    // The prompt is KEPT: it may already be on screen, and deferring the
+    // decision ("I'll decide" / "Skip for now") must never take it away.
+    // The decision card is shown alongside it.
     return {
-      nextPrompt: '',
-      expectedOutcome: '',
       needsHumanJudgment: true,
       humanJudgmentReason: userFacingHandoff(
         (result.userQuestion || '').trim() || (analysis.humanJudgmentReason || '').trim()
