@@ -52,7 +52,11 @@ def train(tdir, outp):
         for r in range(reps):
             lead = np.zeros(int(SR * rng.uniform(0.3, 1.2)), np.float32)
             if rng.random() < 0.5: g = gens[rng.integers(len(gens))]; lead = np.concatenate([g / (np.abs(g).max() or 1) * 0.5, np.zeros(int(SR * rng.uniform(0.05, 0.4)), np.float32)])
-            a = np.concatenate([lead, x, np.zeros(int(SR * 0.6), np.float32)])
+            tail = np.zeros(int(SR * 0.6), np.float32)
+            if m['kind'] == 'pos' and r > 0:  # the request usually follows the name with little or no pause
+                g = gens[rng.integers(len(gens))]; g = g[np.argmax(np.abs(g) > 0.02 * np.abs(g).max()):]
+                tail = np.concatenate([np.zeros(int(SR * rng.uniform(0, 0.25)), np.float32), g / (np.abs(g).max() or 1) * 0.5])
+            a = np.concatenate([lead, x, tail])
             a = augment(rng, a, gens)
             E = emb(a)
             if len(E) < 16: continue
@@ -103,6 +107,16 @@ def scores(model, x):
 if __name__ == '__main__':
     if sys.argv[1] == 'train': train(sys.argv[2], sys.argv[3])
 
+def libri_chunks():  # real human read speech, speakers never used in training, ~2 h
+    import soundfile as sf, glob
+    files = sorted(f for f in glob.glob(os.environ['LIBRI'] + '/*/*/*.flac') if int(f.split('/')[-3]) % 2 == 1)
+    buf = []; tot = 0; idx = 0
+    for fp in files:
+        a, _ = sf.read(fp, dtype='float32'); buf += [a, np.zeros(SR // 2, np.float32)]; tot += len(a) + SR // 2
+        if tot >= SR * 300:
+            yield f'libri{idx}', np.concatenate(buf); buf = []; tot = 0; idx += 1
+            if idx >= 24: return
+
 def evaluate(setdir, modelp, outp, shard='0/1'):
     """max score per eval clip x condition (same conditions as run_vosk.py), and triggers on long non-wake audio"""
     sys.argv = [sys.argv[0], setdir, '', '', '']  # reuse run_vosk.py's render without running it
@@ -122,15 +136,6 @@ def evaluate(setdir, modelp, outp, shard='0/1'):
             s = scores(model, x)
             f.write(json.dumps({'id': i, 'kind': m['kind'], 'source': m['source'], 'voice': m.get('voice'), 'cond': cond, 'said': m['text'], 'max': round(float(s.max()), 4) if len(s) else 0}) + '\n'); f.flush()
     # long non-wake audio in 5-minute chunks: every score peak above 0.3 (thresholding later), 2 s refractory
-    def libri_chunks():  # real human read speech, speakers never used in training, ~2 h
-        import soundfile as sf, glob
-        files = sorted(f for f in glob.glob(os.environ['LIBRI'] + '/*/*/*.flac') if int(f.split('/')[-3]) % 2 == 1)
-        buf = []; tot = 0; idx = 0
-        for fp in files:
-            a, _ = sf.read(fp, dtype='float32'); buf += [a, np.zeros(SR // 2, np.float32)]; tot += len(a) + SR // 2
-            if tot >= SR * 300:
-                yield f'libri{idx}', np.concatenate(buf); buf = []; tot = 0; idx += 1
-                if idx >= 24: return
     chunks = [(f'stream{i}', x) for i, x in wa.stream_chunks()]
     import itertools
     for i, x in itertools.chain(((a, b) for a, b in chunks), libri_chunks() if os.environ.get('LIBRI') else []):
