@@ -26,7 +26,8 @@ const root = process.cwd()
 const arg = (name) => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null }
 const quick = process.argv.includes('--quick')
 const data = JSON.parse(readFileSync(join(root, 'scripts', 'eval-wake-word-data.json'), 'utf8'))
-const KOKORO_VOICES = quick ? ['af_bella', 'am_puck'] : ['af_bella', 'af_heart', 'af_nicole', 'am_puck', 'am_michael', 'am_fenrir', 'bf_emma', 'bm_george']
+const noBundled = process.argv.includes('--no-bundled')
+const KOKORO_VOICES = noBundled ? [] : quick ? ['af_bella', 'am_puck'] : ['af_bella', 'af_heart', 'af_nicole', 'am_puck', 'am_michael', 'am_fenrir', 'bf_emma', 'bm_george']
 const SPEEDS = quick ? [1.0] : [0.85, 1.0, 1.2]
 
 function resample(x, from, to) {
@@ -134,6 +135,7 @@ const NOISY = ['hiss', 'babble', 'far']
 const results = []
 let n = 0
 for (const c of clips.filter((c) => c.kind !== 'chat')) {
+  if (n % 50 === 0) console.error(`utterance ${n}/${clips.length} ${new Date().toISOString()}`)
   const conds = ['clean', NOISY[n++ % 3]]
   for (const condition of conds) {
     const babble = babbleSrc.length ? babbleSrc[n % babbleSrc.length].samples : new Float32Array(1)

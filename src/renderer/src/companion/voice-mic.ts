@@ -28,7 +28,7 @@ export function micButtonState(input: { listenModel: ListenModel; hasElevenKey: 
   const local = input.listenModel !== 'missing' && input.listenModel !== 'failed'
   const via = local ? 'on-device' : input.hasElevenKey ? 'elevenlabs' : null
   if (!via) return { visible: true, canRecord: false, via, explain: NO_SPEECH_TO_TEXT_MESSAGE }
-  if (!input.watching) return { visible: true, canRecord: false, via, explain: 'Show MyBuildy your coding agent first' }
+  if (!input.watching) return { visible: true, canRecord: false, via, explain: 'Ask out loud once MyBuildy is watching your coding agent' }
   return { visible: true, canRecord: true, via, explain: null }
 }
 

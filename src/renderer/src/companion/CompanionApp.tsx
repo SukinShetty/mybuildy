@@ -575,16 +575,9 @@ export function CompanionApp(): React.ReactElement {
           onClick={onMicToggle}
           disabled={!micButton.canRecord}
           explain={micButton.explain}
+          indicator={listenIndicator}
+          indicatorTitle={listenIndicatorTitle(listenIndicator, listenMessage)}
         />
-        {listenIndicator !== 'off' && (
-          <span
-            data-testid="wake-indicator"
-            data-state={listenIndicator}
-            role="status"
-            title={listenIndicatorTitle(listenIndicator, listenMessage)}
-            style={{ ...S.wakeDot, ...(listenIndicator === 'error' ? S.wakeDotError : listenIndicator === 'heard' || listenIndicator === 'working' ? S.wakeDotHeard : {}) }}
-          />
-        )}
         <Btn icon={showLastIcon} onClick={onShowLast} active={false} title="Show last guidance" />
         <Btn icon={monitorIcon} onClick={openPicker} active={false} title="Show MyBuildy your coding agent" />
         <Btn icon={gearIcon} onClick={onSettings} active={false} title="Settings" />
@@ -692,11 +685,15 @@ function listenIndicatorTitle(state: ListenIndicator, message: string | null): s
   return 'Listening for "MyBuildy" (on this computer). Turn off in Settings > Voice.'
 }
 
-function MicBtn({ micState, onClick, disabled, explain }: { micState: MicState; onClick: () => void; disabled: boolean; explain: string | null }) {
+function MicBtn({ micState, onClick, disabled, explain, indicator, indicatorTitle }: {
+  micState: MicState; onClick: () => void; disabled: boolean; explain: string | null
+  indicator: ListenIndicator; indicatorTitle: string
+}) {
   const isActive = micState === 'listening'
   const isBusy = micState === 'transcribing' || micState === 'answering'
 
   return (
+    <span style={S.micWrap}>
     <button
       onClick={isBusy ? undefined : onClick}
       className="robot-btn"
@@ -709,11 +706,23 @@ function MicBtn({ micState, onClick, disabled, explain }: { micState: MicState; 
       title={
         isActive ? 'Click to stop'
         : isBusy ? 'Processing...'
-        : disabled ? (explain ?? 'Show MyBuildy your coding agent first')
+        : disabled ? (explain ?? 'Ask out loud once MyBuildy is watching your coding agent')
         : 'Click to talk'
       }
       dangerouslySetInnerHTML={{ __html: micIcon }}
     />
+    {/* Wake word listening: a dot on the mic (takes no room on the bar). */}
+    {indicator !== 'off' && (
+      <span
+        data-testid="wake-indicator"
+        data-state={indicator}
+        role="status"
+        aria-label={indicatorTitle}
+        title={indicatorTitle}
+        style={{ ...S.wakeDot, ...(indicator === 'error' ? S.wakeDotError : indicator === 'heard' || indicator === 'working' ? S.wakeDotHeard : {}) }}
+      />
+    )}
+    </span>
   )
 }
 
@@ -793,7 +802,7 @@ const S = {
   pill: {
     display: 'flex',
     alignItems: 'center',
-    gap: 3,
+    gap: 2,
     marginTop: 8,
     background: BAR_BACKGROUND_CSS, // near-solid dark bar (robot-theme.ts, contrast-tested)
     backdropFilter: 'blur(12px)',
@@ -887,7 +896,7 @@ const S = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 28,
+    width: 26,
     height: 28,
     borderRadius: 8,
     border: 'none',
@@ -895,9 +904,10 @@ const S = {
     padding: 0,
     // colour, hover and active looks: .robot-btn in global.css
   },
+  micWrap: { position: 'relative' as const, display: 'flex', flexShrink: 0 },
   wakeDot: {
-    width: 8, height: 8, borderRadius: 4, background: '#FF453A', alignSelf: 'center' as const,
-    margin: '0 2px', animation: 'pulse 1.6s ease-in-out infinite',
+    position: 'absolute' as const, top: 2, right: 2, pointerEvents: 'none' as const,
+    width: 7, height: 7, borderRadius: 4, background: '#FF453A', animation: 'pulse 1.6s ease-in-out infinite',
   },
   wakeDotHeard: { background: '#30D158' },
   wakeDotError: { background: '#8E8E93', animation: 'none' },
