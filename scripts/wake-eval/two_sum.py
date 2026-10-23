@@ -8,7 +8,15 @@ for f in glob.glob(sys.argv[2]):
 def lenient(t):
     t = re.sub(r'[^a-z ]', ' ', t.lower()); t = ' ' + re.sub(r'\s+', ' ', t) + ' '
     return bool(re.search(r' (my|mai|hi|hey) ?(buildy|buildie|buildi|build e|biddy|bilty|bildy|building|billy|beauty|buddy) ', t) or ' mybuildy' in t)
-rules = {'app': lambda v: v['app'], 'lenient': lambda v: lenient(v['text'])}
+REQ = r'(what|whats|why|how|where|when|who|which|can|could|would|will|should|please|tell|explain|help|give|show|check|fix|did|does|do|is it|are|any|next)'
+def hey(t, loose=False):
+    t = re.sub(r'[^a-z ,.?!]', ' ', t.lower()); t = re.sub(r'\s+', ' ', t).strip()
+    names = r'(buildy|buildie|bildy|billdy|baldy|bill d|bill b|building|billie' + (r'|billy|beauty|bud|buddy' if loose else '') + r')'
+    m = re.match(r'^(hey|hay|a|hi|okay hey)[,.!]? ' + names + r'\b([,.?!]?)\s*(.*)$', t)
+    if not m: return False
+    rest = m.group(4)
+    return m.group(3) != '' or rest == '' or bool(re.match(REQ + r'\b', rest))
+rules = {'hey-strict': lambda v: hey(v['text']), 'hey-loose': lambda v: hey(v['text'], True),'app': lambda v: v['app'], 'lenient': lambda v: lenient(v['text'])}
 for name, rule in rules.items():
     d = collections.defaultdict(list); fa = collections.Counter(); secs = collections.Counter(); pend = 0
     for i, r in idx.items():
