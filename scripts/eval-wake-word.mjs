@@ -101,7 +101,7 @@ console.error(`clips: ${clips.length}`)
 // ── 2. Listening model ──
 env.localModelPath = `${root}/resources/whisper`
 const loadStart = Date.now()
-const asr = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-tiny.en', { dtype: { encoder_model: 'q8', decoder_model_merged: 'q8' }, device: 'cpu', session_options: { intraOpNumThreads: 1, interOpNumThreads: 1 } })
+const asr = await pipeline('automatic-speech-recognition', arg('--model') ?? 'onnx-community/whisper-tiny.en', { dtype: { encoder_model: 'q8', decoder_model_merged: 'q8' }, device: 'cpu', session_options: { intraOpNumThreads: 1, interOpNumThreads: 1 } })
 await asr(new Float32Array(16000))
 const loadMs = Date.now() - loadStart
 const clean = (t) => t.replace(/\[[^\]]*\]|\([^)]*\)|♪/g, ' ').replace(/\s+/g, ' ').trim()
