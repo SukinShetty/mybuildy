@@ -48,7 +48,7 @@ def train(tdir, outp):
     rng = np.random.default_rng(1)
     for n, m in enumerate(man):
         x = load(m); x = x / (np.abs(x).max() or 1) * 0.5; split = 'va' if m['voice'] in val_voices else 'tr'
-        reps = 3 if m['kind'] == 'pos' else 1
+        reps = (6 if '-IN-' in m['voice'] or 'mINm' in m['voice'] else 3) if m['kind'] == 'pos' else 1
         for r in range(reps):
             lead = np.zeros(int(SR * rng.uniform(0.3, 1.2)), np.float32)
             if rng.random() < 0.5: g = gens[rng.integers(len(gens))]; lead = np.concatenate([g / (np.abs(g).max() or 1) * 0.5, np.zeros(int(SR * rng.uniform(0.05, 0.4)), np.float32)])
