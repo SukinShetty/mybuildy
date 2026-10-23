@@ -6,6 +6,15 @@ All notable changes to MyBuildy are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **"MyBuildy" wake word** (off by default; Settings → Voice → *Listen for "MyBuildy"*). Say "MyBuildy, give me the prompt" for the next prompt, or "MyBuildy, …" with any question. Listening runs only while it's on, MyBuildy is watching and the robot is on screen, with a listening dot on the robot's bar. Everything is checked on this computer by a small bundled listening model; nothing is sent before the name is heard. Recovers by itself when the microphone is unplugged, switched or the computer sleeps; a blocked microphone explains where to allow it (Windows and Mac).
+- **The mic button is always shown.** Spoken questions are turned into text on this computer, no ElevenLabs key needed. If that isn't possible and no key is saved, the button explains how to get voice working.
+
+### Changed
+
+- Installers are about 41 MB larger (the bundled listening model). `npm run fetch:voice` now also downloads it (pinned revision, checksums verified).
+
 ## [0.1.0] — 2026-09-23
 
 First public release, source-available under the PolyForm Shield License 1.0.0. Windows installer and macOS DMGs (Apple Silicon and Intel) via GitHub Releases; Linux runs from source (untested).
