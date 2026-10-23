@@ -20,8 +20,9 @@ import { initProjects } from './projects'
 import { isProjectsRecoveryError, readProjectsBackup, restoreProjectsBackup, preserveDamagedProjectsFile } from './projects-core'
 import { createVoicePlayerWindow, destroyVoicePlayer, stopVoice } from './voice-player'
 import { startKokoro, stopKokoro } from './kokoro-engine'
+import { startListenEngine, stopListenEngine } from './listen-engine'
 import { migratePlaintextSecrets } from './secure-store'
-import { settingsFilePath, loadRedactedSettings, loadGoal } from './memory'
+import { settingsFilePath, loadRedactedSettings, loadGoal, loadNonSecretSettings } from './memory'
 import { isModelConfigured } from '../renderer/src/types'
 import { debugLog } from './debug-log'
 import { isSafeExternalUrl, isAllowedAppNavigation, isBlockedDevShortcut } from './navigation-guard'
@@ -140,7 +141,7 @@ const cleanUpForQuit = createShutdown({
     companionWindow = null
   },
   destroyGuidance: () => { destroyGuidanceWindow(); guidanceWindow = null },
-  destroyVoicePlayer: () => { destroyVoicePlayer(); stopKokoro(); voicePlayerWindow = null },
+  destroyVoicePlayer: () => { destroyVoicePlayer(); stopKokoro(); stopListenEngine(); voicePlayerWindow = null },
   destroyMainWindow: () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy()
     mainWindow = null
@@ -390,6 +391,8 @@ app.whenReady().then(async () => {
 
   // Buildy's own voice: load the bundled model now and keep it loaded.
   startKokoro()
+  // On-device listening: loaded at startup only if the user turned the wake word on.
+  void loadNonSecretSettings().then((s) => { if (s.wakeWordEnabled) void startListenEngine() }).catch(() => {})
 
   // e2e-only fixture hooks (no-op unless MYBUILDY_E2E=1 and not packaged).
   registerE2eTestHooks(() => companionWindow)

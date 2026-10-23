@@ -182,7 +182,9 @@ MyBuildy opens a **guided setup** on first launch — one step per screen, about
 
 Afterwards the line under the robot always says the next thing to do. The robot's bar can **Hide** it while it keeps watching (bring it back by clicking MyBuildy in your taskbar, or the Dock on Mac; **Ctrl+Alt+B** / **Cmd+Option+B** also works) or **Quit** MyBuildy; Settings → **Robot size** makes it bigger or smaller (or hold Ctrl/Cmd and scroll over the robot). Settings has **Run setup again**.
 
-**Voice.** Buildy speaks with his own voice, which is bundled with MyBuildy and runs on your computer: free, nothing to set up, nothing sent anywhere. Choose **Female voice** (the default) or **Male voice** in Settings → Voice, with Play sample for each; the change applies from the next sentence. Optional: add an **ElevenLabs** key in Settings → Voice to use an ElevenLabs voice instead and to get the mic button for spoken questions (the microphone is only requested the first time you click it).
+**Voice.** Buildy speaks with his own voice, which is bundled with MyBuildy and runs on your computer: free, nothing to set up, nothing sent anywhere. Choose **Female voice** (the default) or **Male voice** in Settings → Voice, with Play sample for each; the change applies from the next sentence. **Talk to Buildy.** The mic button is always on the robot's bar: click it, ask your question, click again. What you say is turned into text **on this computer** by a small listening model bundled with MyBuildy (about 64 MB), so your voice isn't sent anywhere; the question then goes through the normal ask flow. The microphone is only requested the first time you click it (never during setup). Optional: add an **ElevenLabs** key in Settings → Voice to use an ElevenLabs voice instead (if the listening model is missing, the key is also used to turn speech into text).
+
+**"MyBuildy" wake word (off by default).** Turn on **Listen for "MyBuildy"** in Settings → Voice to ask hands-free: say *"MyBuildy, give me the prompt"* (shows the next prompt, the same as Analyze Now; it never presses Enter) or *"MyBuildy, why did the tests fail?"*. While it is on, the microphone is open whenever MyBuildy is watching and the robot is on screen, and a small dot on the robot's bar shows it is listening. Everything heard is checked on this computer; nothing is sent anywhere unless you said "MyBuildy" first. It stops when you turn it off, hide the robot, or stop watching. It is new: it works best in a quiet room close to the mic, and can miss the name or (rarely) wake by mistake.
 
 ---
 
@@ -200,7 +202,7 @@ MyBuildy uses **your** API key, and **each analysis is a paid API call** to your
 
 No accounts, no MyBuildy servers, **no telemetry**. Your settings, keys and project memory are saved on this computer.
 
-**In short:** screenshots of the window you picked, and the relevant parts of this project's memory, go to **the AI provider you chose**, with your own key. Nothing goes anywhere else — except your spoken questions and the spoken guidance text, and only if you add your own ElevenLabs key. With a local model (Ollama or LM Studio on this computer), all of it stays on this computer.
+**In short:** screenshots of the window you picked, and the relevant parts of this project's memory, go to **the AI provider you chose**, with your own key. Nothing goes anywhere else — except the spoken guidance text if you add your own ElevenLabs key. What you say to Buildy is turned into text on this computer. With a local model (Ollama or LM Studio on this computer), all of it stays on this computer.
 
 This is everything MyBuildy sends, and where:
 
@@ -208,7 +210,7 @@ This is everything MyBuildy sends, and where:
 |---|---|---|
 | **Screen analysis** (watching, and Analyze on the Guidance screen) | An image of the window you chose, its title, your goal and this project's memory | **Your AI provider** |
 | **Brainstorm** | Your messages and the conversation so far | **Your AI provider** |
-| **Spoken questions** (mic button) | Your recording | **ElevenLabs** speech-to-text |
+| **Spoken questions** (mic button, or after "MyBuildy") | Your recording | Nobody: turned into text **on this computer**. Only if the listening model is missing and you saved an ElevenLabs key: **ElevenLabs** speech-to-text |
 | | The transcript, plus a fresh screenshot of the watched window and the project context | **Your AI provider** |
 | **Spoken guidance** | The text being read aloud | **ElevenLabs**, only if you saved an ElevenLabs key (otherwise Buildy's own voice, or your computer's voice, speaks on this computer and nothing is sent) |
 | **Grading and verification** (checking a suggested prompt; checking that a pasted prompt worked) | The prompt, its expected outcome and context | **Your AI provider** — on Anthropic this is a separate call to a smaller, cheaper model |

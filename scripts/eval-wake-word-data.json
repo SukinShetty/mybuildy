@@ -1,0 +1,93 @@
+{
+ "wake": [
+  [
+   "MyBuildy, give me the prompt.",
+   "give me the prompt"
+  ],
+  [
+   "MyBuildy, what happened?",
+   "what happened"
+  ],
+  [
+   "MyBuildy, what should I type next?",
+   "what should i type next"
+  ],
+  [
+   "Hey MyBuildy, explain this error.",
+   "explain this error"
+  ],
+  [
+   "MyBuildy, is it done yet?",
+   "is it done yet"
+  ],
+  [
+   "MyBuildy give me the prompt",
+   "give me the prompt"
+  ],
+  [
+   "MyBuildy, why did the test fail?",
+   "why did the test fail"
+  ],
+  [
+   "MyBuildy, what is Claude doing right now?",
+   "what is claude doing right now"
+  ],
+  [
+   "MyBuildy, did it work?",
+   "did it work"
+  ],
+  [
+   "MyBuildy, how do I fix this?",
+   "how do i fix this"
+  ]
+ ],
+ "other": [
+  "My buddy gave me a prompt.",
+  "Let me build this app.",
+  "I think the build is broken.",
+  "We should rebuild it tomorrow.",
+  "My body is tired today.",
+  "Give me the prompt.",
+  "What should I type next?",
+  "The building is very tall.",
+  "My bill is due today.",
+  "Run the build again please.",
+  "Maybe the bot is stuck.",
+  "My laptop is getting hot.",
+  "Can you build me a website?",
+  "I need to buy milk.",
+  "Okay Claude, keep going.",
+  "My Billy is a good dog.",
+  "My building has a new lift.",
+  "Mobility matters for older people.",
+  "My birdie flew away.",
+  "Hey buddy, what happened?",
+  "My guy, give me a second.",
+  "Mild beauty is still beauty.",
+  "Maybe Buddy knows the answer.",
+  "My build is failing again.",
+  "Hi, Billy, how are you?"
+ ],
+ "chat": [
+  "Okay so the tests are passing now, let me check the login page.",
+  "Claude just changed the database schema, I need to look at the migration.",
+  "Hmm, that error says the module was not found.",
+  "Let me open the terminal and run npm install again.",
+  "I think we should add a dark mode to the settings screen.",
+  "Can you hear me? I'm on a call right now.",
+  "Yeah, the deploy finished, the site is live.",
+  "My building's wifi is terrible today.",
+  "So my buddy said we should use Postgres instead.",
+  "Wait, why is the build taking so long?",
+  "I'll grab a coffee and come back in five minutes.",
+  "The prompt was too long, so it got cut off.",
+  "Let me read what it wrote before I accept it.",
+  "Okay, scroll up, there was a warning about the API key.",
+  "That's weird, it worked on my machine yesterday.",
+  "Mom, I'll call you back in ten minutes.",
+  "The meeting got moved to three o'clock.",
+  "Should I name the project my build tracker?",
+  "My boss wants the demo by Friday.",
+  "Alright, type yes and press enter."
+ ]
+}

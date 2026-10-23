@@ -272,6 +272,23 @@ const mybuildyAPI = {
   askQuestion: (question: string): Promise<void> =>
     ipcRenderer.invoke(IPC.ASK_QUESTION, question),
 
+  // On-device listening (the mic button and the "MyBuildy" wake word): the
+  // samples are turned into text on this computer and never sent anywhere.
+  transcribeLocally: (samples: Float32Array): Promise<{ success: boolean; text: string; error?: string }> =>
+    ipcRenderer.invoke(IPC.LISTEN_TRANSCRIBE, samples),
+
+  listenStatus: (): Promise<'missing' | 'off' | 'loading' | 'ready' | 'failed'> =>
+    ipcRenderer.invoke(IPC.LISTEN_STATUS),
+
+  setWakeWord: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke(IPC.WAKE_WORD_SET, enabled),
+
+  onWakeWordChanged: (handler: (enabled: boolean) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, enabled: boolean) => handler(enabled)
+    ipcRenderer.on(IPC.WAKE_WORD_CHANGED, listener)
+    return () => ipcRenderer.removeListener(IPC.WAKE_WORD_CHANGED, listener)
+  },
+
   transcribeAudio: (audioBuffer: ArrayBuffer): Promise<{ success: boolean; text: string; error?: string }> =>
     ipcRenderer.invoke(IPC.TRANSCRIBE_AUDIO, Buffer.from(audioBuffer)),
 

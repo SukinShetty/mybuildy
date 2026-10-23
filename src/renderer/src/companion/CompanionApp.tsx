@@ -4,6 +4,9 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { StopGeneration, transcribeAndAsk } from './voice-question'
+import { WakeListener, shouldListenForWakeWord, type ListenIndicator } from './wake-listener'
+import { openMicrophone, micButtonState, micErrorMessage, type ListenModel, type OpenedMic } from './voice-mic'
+import type { VoiceCommand } from './wake-phrase'
 import { useCompanionStore } from '../store/useCompanionStore'
 import { Mascot } from '../components/Mascot'
 import { deriveMascotSignals, type MascotAlignment } from './mascot-signals'
@@ -53,8 +56,16 @@ export function CompanionApp(): React.ReactElement {
   isMutedRef.current = isMuted
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
+  const recorderStopRef = useRef<(() => void) | null>(null)
   const stopGenRef = useRef(new StopGeneration())
-  const streamRef = useRef<MediaStream | null>(null)
+  const micRef = useRef<OpenedMic | null>(null)
+  const samplesRef = useRef<Float32Array[]>([])
+  // On-device listening (mic button + wake word) and the "MyBuildy" wake word (off by default).
+  const [listenModel, setListenModel] = useState<ListenModel>('off')
+  const [wakeWordEnabled, setWakeWordEnabled] = useState(false)
+  const [listenIndicator, setListenIndicator] = useState<ListenIndicator>('off')
+  const [listenMessage, setListenMessage] = useState<string | null>(null)
+  const [robotVisible, setRobotVisible] = useState(document.visibilityState !== 'hidden')
 
   // ─── Robot animation signals ────────────────────────────────────────
   // Alignment glow, one-off reactions, "!" badge and the drag direction.
@@ -101,7 +112,9 @@ export function CompanionApp(): React.ReactElement {
         setNeedsSetup(!isModelConfigured(s))
         setHasElevenKey(!!s.hasElevenLabsKey)
         setCaptureNoticeAccepted(s.captureNoticeAccepted)
+        setWakeWordEnabled(s.wakeWordEnabled === true)
       }).catch(() => {})
+      window.mybuildy.listenStatus().then((m) => { if (alive) setListenModel(m) }).catch(() => {})
     }
     check()
     const timer = setInterval(check, 5000)
@@ -240,97 +253,158 @@ export function CompanionApp(): React.ReactElement {
     setPendingPick(null) // abort the window pick entirely
   }
 
-  // ─── Click-to-talk (MediaRecorder → ElevenLabs STT) ─────────────────
+  // ─── Click-to-talk ───────────────────────────────────────────────────
+  // On this computer when the listening model is here (the usual case), else
+  // ElevenLabs if a key is saved, else the button explains (voice-mic.ts).
+
+  const micButton = micButtonState({ listenModel, hasElevenKey, watching: !!watchedWindowName })
 
   const startRecording = useCallback(async () => {
     if (!watchedWindowName) return
     setMicError(null)
+    const button = micButtonState({ listenModel, hasElevenKey, watching: true })
+    if (!button.canRecord) { setMicError(button.explain); return }
+    const onDevice = button.via === 'on-device'
 
+    let mic: OpenedMic
     try {
       // NOTE: deliberately does NOT stop audio (Invariant 2). Starting the mic
       // while MyBuildy is talking lets it finish; recording proceeds in parallel.
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
+      mic = await openMicrophone()
+    } catch (err) {
+      console.error('[Mic] could not open the microphone:', (err as { name?: string })?.name)
+      setMicState('idle')
+      setMicError(micErrorMessage(err, window.mybuildy.platform))
+      return
+    }
+    micRef.current = mic
+    // One Stop generation for the whole question: recording → transcription → question.
+    const startedAt = stopGenRef.current.current()
+    const ask = (question: string): Promise<void> => window.mybuildy.askQuestion(question) // never log the text
+    const finish = async (audio: ArrayBuffer | Float32Array, tooShort: boolean): Promise<void> => {
+      if (stopGenRef.current.current() !== startedAt) {
+        console.log('[Mic] Recording discarded (Stop) — not transcribed')
+        setMicState('idle')
+        return
+      }
+      if (tooShort) {
+        setMicState('idle')
+        setMicError('Too short — click mic, speak, click again.')
+        return
+      }
+      try {
+        const outcome = await transcribeAndAsk(audio as ArrayBuffer, startedAt, stopGenRef.current, {
+          transcribe: () => onDevice
+            ? window.mybuildy.transcribeLocally(audio as Float32Array)
+            : window.mybuildy.transcribeAudio(audio as ArrayBuffer),
+          ask,
+          onStatus: (status, error) => { setMicState(status); setMicError(error ?? null) },
+        })
+        if (outcome === 'cancelled') setMicState('idle')
+        else if (outcome === 'asked') setMicState('idle')
+      } catch (err) {
+        console.error('[Mic] Error:', err)
+        setMicState('idle')
+        setMicError(`Error: ${String(err).slice(0, 80)}`)
+      }
+    }
 
-      const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' })
-      // One Stop generation for the whole question: recording → transcription → question.
-      const startedAt = stopGenRef.current.current()
+    if (onDevice) {
+      samplesRef.current = []
+      mic.onSamples((chunk) => samplesRef.current.push(chunk))
+      recorderStopRef.current = () => {
+        mic.close()
+        const total = samplesRef.current.reduce((n, c) => n + c.length, 0)
+        const all = new Float32Array(total)
+        let at = 0
+        for (const c of samplesRef.current) { all.set(c, at); at += c.length }
+        samplesRef.current = []
+        void finish(all, total < 16_000 * 0.4)
+      }
+    } else {
+      const recorder = new MediaRecorder(mic.stream, { mimeType: 'audio/webm;codecs=opus' })
       audioChunksRef.current = []
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data)
-      }
-
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
       recorder.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop())
-        streamRef.current = null
-
-        // Stop pressed at any point since recording started: throw it away.
-        if (stopGenRef.current.current() !== startedAt) {
-          audioChunksRef.current = []
-          console.log('[Mic] Recording discarded (Stop) — not transcribed')
-          setMicState('idle')
-          return
-        }
-
+        mic.close()
         const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
-        console.log(`[Mic] Recording complete: ${blob.size} bytes`)
-
-        if (blob.size < 500) {
-          console.warn('[Mic] Recording too short')
-          setMicState('idle')
-          setMicError('Too short — click mic, speak, click again.')
-          return
-        }
-
-        try {
-          const arrayBuffer = await blob.arrayBuffer()
-          const outcome = await transcribeAndAsk(arrayBuffer, startedAt, stopGenRef.current, {
-            transcribe: (audio) => window.mybuildy.transcribeAudio(audio),
-            // NOTE: never log the transcribed text itself (user speech content).
-            ask: (question) => window.mybuildy.askQuestion(question),
-            onStatus: (status, error) => {
-              setMicState(status)
-              setMicError(error ?? null)
-            },
-          })
-          if (outcome === 'cancelled') {
-            console.log('[Mic] Stopped — the question was not sent')
-            setMicState('idle')
-          }
-        } catch (err) {
-          console.error('[Mic] Error:', err)
-          setMicState('idle')
-          setMicError(`Error: ${String(err).slice(0, 80)}`)
-        }
+        audioChunksRef.current = []
+        void finish(await blob.arrayBuffer(), blob.size < 500)
       }
-
       mediaRecorderRef.current = recorder
       recorder.start()
-      setMicState('listening')
-      console.log('[Mic] Recording started — click mic again to stop')
-    } catch (err) {
-      console.error('[Mic] getUserMedia failed:', err)
-      setMicState('idle')
-      setMicError('Microphone access denied. Allow mic in system settings.')
+      recorderStopRef.current = () => { if (recorder.state === 'recording') recorder.stop() }
     }
-  }, [watchedWindowName])
+    setMicState('listening')
+    console.log(`[Mic] Recording started (${onDevice ? 'on this computer' : 'ElevenLabs'}) — click mic again to stop`)
+  }, [watchedWindowName, listenModel, hasElevenKey])
 
   // Stop: bump the generation (cancels a transcription or question already
   // under way) and end any recording — it is discarded, never transcribed.
   const discardRecording = useCallback(() => {
     stopGenRef.current.bump()
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop()
-      mediaRecorderRef.current = null
-    }
+    stopRecording()
   }, [])
 
   const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-      mediaRecorderRef.current.stop()
-      mediaRecorderRef.current = null
+    const stop = recorderStopRef.current
+    recorderStopRef.current = null
+    mediaRecorderRef.current = null
+    micRef.current = null
+    if (stop) {
+      stop()
       console.log('[Mic] Recording stopped — processing...')
+    }
+  }, [])
+
+  // ─── "MyBuildy" wake word ──────────────────────────────────────────
+  // Listening runs only while ALL are true: the user turned it on (Settings >
+  // Voice), MyBuildy is watching, the one-time notice was accepted, the robot is
+  // on screen, the listening model is here, and the mic button isn't recording.
+
+  const runVoiceCommand = useCallback(async (command: VoiceCommand) => {
+    if (command.kind === 'suggest-prompt') {
+      // "give me the prompt": MyBuildy looks now and shows the next prompt (never presses Enter).
+      await window.mybuildy.analyzeNow()
+    } else if (command.kind === 'ask') {
+      setMicState('answering')
+      try { await window.mybuildy.askQuestion(command.question) } finally { setMicState('idle') }
+    }
+  }, [])
+
+  const wakeRef = useRef<WakeListener | null>(null)
+  if (!wakeRef.current) {
+    wakeRef.current = new WakeListener({
+      openMic: () => openMicrophone(),
+      transcribe: (samples) => window.mybuildy.transcribeLocally(samples),
+      onCommand: (command) => runVoiceCommandRef.current(command),
+      onIndicator: (state, message) => { setListenIndicator(state); setListenMessage(message ?? null) },
+      explainMicError: (error) => micErrorMessage(error, window.mybuildy.platform),
+    })
+  }
+  const runVoiceCommandRef = useRef(runVoiceCommand)
+  runVoiceCommandRef.current = runVoiceCommand
+
+  const shouldListen = shouldListenForWakeWord({
+    wakeWordEnabled, watching: !!watchedWindowName, captureNoticeAccepted, robotVisible, listenModel,
+    micButtonRecording: micState === 'listening',
+  })
+  useEffect(() => {
+    const listener = wakeRef.current
+    if (!listener) return
+    if (shouldListen) void listener.start()
+    else listener.stop()
+  }, [shouldListen])
+  useEffect(() => () => wakeRef.current?.stop(), [])
+  useEffect(() => window.mybuildy.onWakeWordChanged((on) => { setWakeWordEnabled(on); if (on) setListenMessage(null) }), [])
+  useEffect(() => {
+    const onVisibility = (): void => setRobotVisible(document.visibilityState !== 'hidden')
+    document.addEventListener('visibilitychange', onVisibility)
+    const onDevices = (): void => { void wakeRef.current?.microphoneChanged() }
+    navigator.mediaDevices?.addEventListener?.('devicechange', onDevices)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      navigator.mediaDevices?.removeEventListener?.('devicechange', onDevices)
     }
   }, [])
 
@@ -406,6 +480,7 @@ export function CompanionApp(): React.ReactElement {
 
   function onMicToggle(): void {
     if (micState === 'listening') { stopRecording(); return }
+    if (!micButton.canRecord) { setMicError(micButton.explain); return }
     if (micState !== 'idle') return // don't interrupt transcribing/answering
     startRecording()
   }
@@ -430,6 +505,8 @@ export function CompanionApp(): React.ReactElement {
     : micState === 'transcribing' ? 'transcribing...'
     : micState === 'answering' ? 'thinking...'
     : micError ? micError
+    : listenIndicator === 'heard' ? 'Yes? Ask your question...'
+    : listenIndicator === 'error' && listenMessage ? listenMessage
     : null
 
   // What is going on, for the robot's animation (robot-animation.ts maps it).
@@ -492,14 +569,15 @@ export function CompanionApp(): React.ReactElement {
         <Btn icon={isPaused ? playIcon : pauseIcon} onClick={onPause} active={isPaused} title={isPaused ? 'Resume' : 'Pause'} />
         <Btn icon={quietIcon} onClick={onQuiet} active={isQuietMode} title={isQuietMode ? 'Normal' : 'Quiet'} />
         <div style={S.pillDivider} />
-        {/* Click-to-talk uses ElevenLabs STT — hidden unless a key is saved. */}
-        {hasElevenKey && (
-          <MicBtn
-            micState={micState}
-            onClick={onMicToggle}
-            disabled={!watchedWindowName}
-          />
-        )}
+        {/* The mic is always here: it records (on this computer, or ElevenLabs), or explains why it can't. */}
+        <MicBtn
+          micState={micState}
+          onClick={onMicToggle}
+          disabled={!micButton.canRecord}
+          explain={micButton.explain}
+          indicator={listenIndicator}
+          indicatorTitle={listenIndicatorTitle(listenIndicator, listenMessage)}
+        />
         <Btn icon={showLastIcon} onClick={onShowLast} active={false} title="Show last guidance" />
         <Btn icon={monitorIcon} onClick={openPicker} active={false} title="Show MyBuildy your coding agent" />
         <Btn icon={gearIcon} onClick={onSettings} active={false} title="Settings" />
@@ -599,13 +677,25 @@ function Btn({ icon, onClick, active, title }: { icon: string; onClick: () => vo
 
 // ─── Mic button (click to start, click to stop) ─────────────────────────────
 
-function MicBtn({ micState, onClick, disabled }: { micState: MicState; onClick: () => void; disabled: boolean }) {
+function listenIndicatorTitle(state: ListenIndicator, message: string | null): string {
+  if (state === 'error') return message ?? 'Listening stopped.'
+  if (state === 'heard') return 'Heard "MyBuildy" — ask your question'
+  if (state === 'working') return 'Working on what you asked'
+  if (state === 'starting') return 'Starting to listen for "MyBuildy"'
+  return 'Listening for "MyBuildy" (on this computer). Turn off in Settings > Voice.'
+}
+
+function MicBtn({ micState, onClick, disabled, explain, indicator, indicatorTitle }: {
+  micState: MicState; onClick: () => void; disabled: boolean; explain: string | null
+  indicator: ListenIndicator; indicatorTitle: string
+}) {
   const isActive = micState === 'listening'
   const isBusy = micState === 'transcribing' || micState === 'answering'
 
   return (
+    <span style={S.micWrap}>
     <button
-      onClick={disabled || isBusy ? undefined : onClick}
+      onClick={isBusy ? undefined : onClick}
       className="robot-btn"
       style={{
         ...S.btn,
@@ -616,11 +706,23 @@ function MicBtn({ micState, onClick, disabled }: { micState: MicState; onClick: 
       title={
         isActive ? 'Click to stop'
         : isBusy ? 'Processing...'
-        : disabled ? 'Show MyBuildy your coding agent first'
+        : disabled ? (explain ?? 'Ask out loud once MyBuildy is watching your coding agent')
         : 'Click to talk'
       }
       dangerouslySetInnerHTML={{ __html: micIcon }}
     />
+    {/* Wake word listening: a dot on the mic (takes no room on the bar). */}
+    {indicator !== 'off' && (
+      <span
+        data-testid="wake-indicator"
+        data-state={indicator}
+        role="status"
+        aria-label={indicatorTitle}
+        title={indicatorTitle}
+        style={{ ...S.wakeDot, ...(indicator === 'error' ? S.wakeDotError : indicator === 'heard' || indicator === 'working' ? S.wakeDotHeard : {}) }}
+      />
+    )}
+    </span>
   )
 }
 
@@ -700,7 +802,7 @@ const S = {
   pill: {
     display: 'flex',
     alignItems: 'center',
-    gap: 3,
+    gap: 2,
     marginTop: 8,
     background: BAR_BACKGROUND_CSS, // near-solid dark bar (robot-theme.ts, contrast-tested)
     backdropFilter: 'blur(12px)',
@@ -794,7 +896,7 @@ const S = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 28,
+    width: 26,
     height: 28,
     borderRadius: 8,
     border: 'none',
@@ -802,6 +904,13 @@ const S = {
     padding: 0,
     // colour, hover and active looks: .robot-btn in global.css
   },
+  micWrap: { position: 'relative' as const, display: 'flex', flexShrink: 0 },
+  wakeDot: {
+    position: 'absolute' as const, top: 2, right: 2, pointerEvents: 'none' as const,
+    width: 7, height: 7, borderRadius: 4, background: '#FF453A', animation: 'pulse 1.6s ease-in-out infinite',
+  },
+  wakeDotHeard: { background: '#30D158' },
+  wakeDotError: { background: '#8E8E93', animation: 'none' },
   micActive: {
     background: 'rgba(255,69,58,0.25)',
     color: '#FF453A',
