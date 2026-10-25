@@ -694,6 +694,7 @@ export const IPC = {
   ASK_QUESTION:        'mybuildy:ask-question',       // companion → main (spoken question text)
   TRANSCRIBE_AUDIO:    'mybuildy:transcribe-audio',   // companion → main (audio buffer for ElevenLabs STT, only when no on-device listening)
   LISTEN_TRANSCRIBE:   'listen:transcribe',           // companion → main (16 kHz samples → text, ON THIS COMPUTER; never sent anywhere)
+  LISTEN_SPOT:         'listen:spot',                 // companion → main (live 16 kHz samples → "Hey Buildy" scores, ON THIS COMPUTER)
   LISTEN_STATUS:       'listen:status',               // companion/main window → main (is on-device listening available?)
   WAKE_WORD_SET:       'listen:wake-word-set',        // main window → main (Settings > Voice: wake word on/off)
   WAKE_WORD_CHANGED:   'listen:wake-word-changed',    // main → companion (start/stop listening now)

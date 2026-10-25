@@ -272,10 +272,14 @@ const mybuildyAPI = {
   askQuestion: (question: string): Promise<void> =>
     ipcRenderer.invoke(IPC.ASK_QUESTION, question),
 
-  // On-device listening (the mic button and the "MyBuildy" wake word): the
+  // On-device listening (the mic button and the "Hey Buildy" wake word): the
   // samples are turned into text on this computer and never sent anywhere.
   transcribeLocally: (samples: Float32Array): Promise<{ success: boolean; text: string; error?: string }> =>
     ipcRenderer.invoke(IPC.LISTEN_TRANSCRIBE, samples),
+
+  // "Hey Buildy" keyword scores for live microphone audio, computed on this computer.
+  spotWakeWord: (samples: Float32Array, reset = false): Promise<number[]> =>
+    ipcRenderer.invoke(IPC.LISTEN_SPOT, samples, reset),
 
   listenStatus: (): Promise<'missing' | 'off' | 'loading' | 'ready' | 'failed'> =>
     ipcRenderer.invoke(IPC.LISTEN_STATUS),
