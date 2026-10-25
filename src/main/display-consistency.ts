@@ -97,11 +97,34 @@ export function isGoalReached(analysis: AnalysisResult): boolean {
   return TEXT_FIELDS.some((field) => claimsGoalReached(analysis[field]))
 }
 
+// Only lines about pasting MyBuildy's OWN suggested prompt — never ordinary
+// paste instructions ("paste the preview URL into your browser").
+const PROMPT_REFERENCES = [
+  /\b(prompt|text|command|message)\s+below\b/i,
+  // "the prompt" only with paste/copy/send/use: "Answer the prompt in your
+  // terminal" is about Claude Code's own permission prompt and must stay.
+  /\b(paste|copy|send|use)\b[^.!?]*\b(the|this|that|my|our|mybuildy'?s)\s+(suggested\s+|generated\s+|next\s+|ready-made\s+)?prompt\b/i,
+  /\bpaste\s+(this|it|that|the\s+following)\s+(in|into)\s+(claude(\s+code)?|codex|cursor|the\s+(agent|coding\s+agent|terminal))\b/i,
+]
+
+function pointsAtPrompt(text: string | undefined): boolean {
+  return !!text && PROMPT_REFERENCES.some((re) => re.test(text))
+}
+
 /** Everything the panel shows goes through here (first display and every patch). */
 export function prepareForDisplay(analysis: AnalysisResult): AnalysisResult {
   let out = reconcileWithVerdict(analysis)
   const goalReached = isGoalReached(out)
   if (!!out.goalReached !== goalReached) out = { ...out, goalReached }
+  // Never point at a prompt that is not there ("Paste the prompt below…").
+  if (!(out.nextPrompt || '').trim() && pointsAtPrompt(out.bestNextMove)) {
+    out = {
+      ...out,
+      bestNextMove: out.needsHumanJudgment
+        ? 'Answer the question above first. MyBuildy will suggest the next prompt after that.'
+        : 'No prompt to paste right now. MyBuildy will suggest one on its next look.',
+    }
+  }
   if (out.needsHumanJudgment) {
     const text = userFacingHandoff(out.humanJudgmentReason)
     if (text !== out.humanJudgmentReason) out = { ...out, humanJudgmentReason: text }
