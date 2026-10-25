@@ -14,7 +14,8 @@ def babble(rng, n):
             c = load(chats[rng.integers(len(chats))]); k = min(len(c), n - at); o[at:at + k] += c[:k]; at += len(c) + 2000
     return o
 def render(s, cond, rng):
-    pad = 16000; o = np.zeros(pad + len(s) + 19200, np.float32); sp = rms(s)
+    pad = 40000  # 2.5 s lead: the detector needs ~2 s of audio before its first score (was 1 s, which hid fast speakers)
+    o = np.zeros(pad + len(s) + 19200, np.float32); sp = rms(s)
     if cond == 'far':
         y = np.zeros_like(s); lp = 0.0
         for i in range(len(s)): lp = lp * 0.6 + s[i] * 0.4; y[i] = lp

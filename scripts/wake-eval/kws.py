@@ -63,6 +63,7 @@ def train(tdir, outp):
         for r in range(reps):
             lead = np.zeros(int(SR * rng.uniform(0.3, 1.2)), np.float32)
             if rng.random() < 0.5: g = gens[rng.integers(len(gens))]; lead = np.concatenate([g / (np.abs(g).max() or 1) * 0.5, np.zeros(int(SR * rng.uniform(0.05, 0.4)), np.float32)])
+            lead = np.concatenate([np.zeros(max(0, int(SR * rng.uniform(2.1, 2.6)) - len(lead)), np.float32), lead])  # >= ~2 s before the name so a full 16-frame window ends on it
             tail = np.zeros(int(SR * 0.6), np.float32)
             if m['kind'] == 'pos' and r > 0:  # the request usually follows the name with little or no pause
                 g = gens[rng.integers(len(gens))]; g = g[np.argmax(np.abs(g) > 0.02 * np.abs(g).max()):]
