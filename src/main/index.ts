@@ -8,7 +8,8 @@
 //   - All speech and analysis stop on quit
 //   - Tray provides Open/Quit shortcuts but the app does NOT hide to tray by default
 
-import { app, BrowserWindow, Tray, Menu, nativeImage, shell, globalShortcut, dialog } from 'electron'
+import { app, BrowserWindow, Tray, Menu, nativeImage, shell, globalShortcut, dialog, ipcMain, powerMonitor } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { join } from 'path'
 import { pathToFileURL } from 'node:url'
 import { IPC } from '../renderer/src/types'
@@ -20,8 +21,10 @@ import { initProjects } from './projects'
 import { isProjectsRecoveryError, readProjectsBackup, restoreProjectsBackup, preserveDamagedProjectsFile } from './projects-core'
 import { createVoicePlayerWindow, destroyVoicePlayer, stopVoice } from './voice-player'
 import { startKokoro, stopKokoro } from './kokoro-engine'
+import { startListenEngine, stopListenEngine } from './listen-engine'
+import { PowerPause } from './power-pause'
 import { migratePlaintextSecrets } from './secure-store'
-import { settingsFilePath, loadRedactedSettings, loadGoal } from './memory'
+import { settingsFilePath, loadRedactedSettings, loadGoal, loadNonSecretSettings } from './memory'
 import { isModelConfigured } from '../renderer/src/types'
 import { debugLog } from './debug-log'
 import { isSafeExternalUrl, isAllowedAppNavigation, isBlockedDevShortcut } from './navigation-guard'
@@ -34,6 +37,7 @@ import { ROBOT_SHORTCUT, registerRobotShortcut } from './robot-shortcut'
 import { loadRobotScale } from './robot-prefs'
 import { loadSetupState, needsSetup } from './setup-state'
 import { initWatchLog } from './watch-log'
+import { createUpdateCheck, updateCheckEnabled, quitOnAllWindowsClosed } from './update-check'
 
 // ─── Global web-contents security guard ──────────────────────────────────────
 // Applies to EVERY renderer (main, companion, guidance, voice — and anything
@@ -140,7 +144,7 @@ const cleanUpForQuit = createShutdown({
     companionWindow = null
   },
   destroyGuidance: () => { destroyGuidanceWindow(); guidanceWindow = null },
-  destroyVoicePlayer: () => { destroyVoicePlayer(); stopKokoro(); voicePlayerWindow = null },
+  destroyVoicePlayer: () => { destroyVoicePlayer(); stopKokoro(); stopListenEngine(); voicePlayerWindow = null },
   destroyMainWindow: () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy()
     mainWindow = null
@@ -390,6 +394,15 @@ app.whenReady().then(async () => {
 
   // Buildy's own voice: load the bundled model now and keep it loaded.
   startKokoro()
+  // On-device listening: loaded at startup only if the user turned the wake word on.
+  void loadNonSecretSettings().then((s) => { if (s.wakeWordEnabled) void startListenEngine() }).catch(() => {})
+  // The wake word pauses while the computer sleeps or the screen is locked, and resumes after.
+  // Sleep and lock are tracked separately (power-pause.ts): waking onto a locked screen stays paused.
+  let startLocked = false
+  try { startLocked = powerMonitor.getSystemIdleState(1) === 'locked' } catch { /* unsupported: assume unlocked */ }
+  new PowerPause((paused) => {
+    if (companionWindow && !companionWindow.isDestroyed()) companionWindow.webContents.send(IPC.LISTEN_PAUSED, paused)
+  }, startLocked).attach(powerMonitor)
 
   // e2e-only fixture hooks (no-op unless MYBUILDY_E2E=1 and not packaged).
   registerE2eTestHooks(() => companionWindow)
@@ -413,6 +426,9 @@ app.whenReady().then(async () => {
 
   console.log('MyBuildy launched — companion only (panel hidden unless setup is needed)')
 
+  // Is there a newer version? Asked once per launch, never again until the next launch.
+  void updateCheck.checkOnce()
+
   // ─── Dev-only: companion idle-CPU measurement (Phase 6, target < 3%) ───────
   // Logs the companion renderer process's CPU every 5s via app.getAppMetrics().
   // percentCPUUsage is measured since the PREVIOUS getAppMetrics() call, so the
@@ -431,6 +447,31 @@ app.whenReady().then(async () => {
     app.on('before-quit', () => clearInterval(cpuTimer))
   }
 })
+
+// ─── Update check: once, when the app opens (update-check.ts) ─────────────────
+// Packaged Windows/macOS builds only. The robot shows the notice; nothing is
+// downloaded or installed without a click.
+let quittingForUpdate = false
+const updateCheck = createUpdateCheck({
+  // A getter: reading autoUpdater constructs it, which must not happen when disabled.
+  updater: () => autoUpdater,
+  currentVersion: app.getVersion(),
+  enabled: updateCheckEnabled({ isPackaged: app.isPackaged, platform: process.platform, env: process.env }),
+  notify: (notice) => {
+    if (companionWindow && !companionWindow.isDestroyed()) companionWindow.webContents.send(IPC.UPDATE_NOTICE, notice)
+  },
+  log: (message) => debugLog(message),
+  // Flags only: the panel's close handler then lets it close, and
+  // 'window-all-closed' leaves the quit to the updater. The windows are closed
+  // by the updater's own quit; 'before-quit' then only stops the work.
+  prepareForInstall: () => { ;(app as any).isQuitting = true; quittingForUpdate = true },
+})
+const fromRobot = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean =>
+  !!companionWindow && !companionWindow.isDestroyed() && event.sender.id === companionWindow.webContents.id
+ipcMain.handle(IPC.UPDATE_NOTICE_GET, () => updateCheck.current())
+ipcMain.on(IPC.UPDATE_DOWNLOAD, (event) => { if (fromRobot(event)) void updateCheck.download() })
+ipcMain.on(IPC.UPDATE_INSTALL, (event) => { if (fromRobot(event)) updateCheck.install() })
+ipcMain.on(IPC.UPDATE_DISMISS, (event) => { if (fromRobot(event)) updateCheck.dismiss() })
 
 // macOS: clicking the Dock icon, or opening MyBuildy again from Applications,
 // brings a hidden robot back; with the robot already showing it opens the panel.
@@ -455,6 +496,7 @@ app.on('activate', () => {
 // Safety net: if all windows close for any reason, quit
 app.on('window-all-closed', () => {
   stopAnalysisLoop('quit')
+  if (!quitOnAllWindowsClosed(quittingForUpdate)) return // the updater is quitting to install
   app.quit()
 })
 
@@ -463,5 +505,6 @@ app.on('window-all-closed', () => {
 // its 'close' handler hides instead of closing unless isQuitting is set, which
 // would otherwise cancel the quit and leave the app running.
 app.on('before-quit', () => {
-  cleanUpForQuit()
+  // Restart to update: stop the work only; the updater closes the windows.
+  cleanUpForQuit({ forUpdate: quittingForUpdate })
 })

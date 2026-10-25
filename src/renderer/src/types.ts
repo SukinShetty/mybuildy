@@ -145,6 +145,7 @@ export interface NonSecretSettings {
   buildyVoice: BuildyVoice       // Buildy's own voice (Kokoro): female (Bella, default) or male (Puck)
   hourlyCallCap: number          // Cost guard: max provider calls per rolling hour (20–600)
   captureNoticeAccepted: boolean // one-time privacy disclosure accepted (first window pick)
+  wakeWordEnabled: boolean       // "Hey Buildy" wake word (Settings > Voice): OFF unless the user turns it on
 }
 
 // Buildy's own voices (Kokoro, bundled): the female voice (Bella) is the default.
@@ -195,6 +196,7 @@ export function defaultNonSecretSettings(): NonSecretSettings {
     buildyVoice: DEFAULT_BUILDY_VOICE,
     hourlyCallCap: HOURLY_CALL_CAP_DEFAULT,
     captureNoticeAccepted: false,
+    wakeWordEnabled: false,
   }
 }
 
@@ -323,8 +325,11 @@ function isLocalEndpoint(baseUrl: string): boolean {
   }
 }
 
-export function dataDestinationNote(input: { provider: ProviderType; baseUrl: string; hasElevenLabsKey: boolean }): string {
-  const voice = input.hasElevenLabsKey ? ' Spoken guidance and voice questions are sent to ElevenLabs.' : ''
+export function dataDestinationNote(input: { provider: ProviderType; baseUrl: string; hasElevenLabsKey: boolean; listensOnDevice?: boolean }): string {
+  // With on-device listening, what you SAY is turned into text on this computer: only spoken guidance goes to ElevenLabs.
+  const voice = !input.hasElevenLabsKey ? ''
+    : input.listensOnDevice ? ' Spoken guidance is sent to ElevenLabs; what you say is turned into text on this computer.'
+    : ' Spoken guidance and voice questions are sent to ElevenLabs.'
   const keys = 'Saved keys are stored encrypted on this computer and are never sent back to this screen.'
   if (input.provider === 'ollama' || input.provider === 'lmstudio' ||
       (input.provider === 'custom' && isLocalEndpoint(input.baseUrl))) {
@@ -337,6 +342,21 @@ export function dataDestinationNote(input: { provider: ProviderType; baseUrl: st
   }
   return `Screenshots and prompts are sent to ${CLOUD_PROVIDER_NAMES[input.provider] ?? 'your AI provider'}. ${keys}`
 }
+
+/** Settings → About: the one request MyBuildy itself makes (update-check.ts). */
+export const UPDATE_CHECK_NOTE =
+  'When MyBuildy opens, it asks GitHub once whether a newer version is published. GitHub sees your IP address, as with any web request; no account, install ID or anything about your projects is sent. Nothing downloads until you click Update.'
+
+// ─── "Hey Buildy" wake word (Settings > Voice) ─────────────────────────────────
+// Off unless the user turns it on. Plain words, no brand or model names.
+export const WAKE_WORD_EXPLANATION =
+  'Works best in a quiet room, and may sometimes miss you or wake by mistake; the mic button is always there. ' +
+  'Say "Hey Buildy" and then your question, for example "Hey Buildy, give me the prompt". ' +
+  'While this is on, the microphone stays on whenever MyBuildy is watching your coding agent and the robot is on screen; ' +
+  'a dot on the robot shows it is listening. Listening for "Hey Buildy" happens entirely on this computer: no sound is ' +
+  'sent anywhere. Only the question you ask after "Hey Buildy" is used, the same way as a question you type or ask with the mic button.'
+export const WAKE_WORD_UNAVAILABLE =
+  "This computer doesn't have MyBuildy's listening model, so the wake word can't be used. Reinstalling MyBuildy puts it back."
 
 // ─── Paste into terminal ─────────────────────────────────────────────────────
 // MyBuildy pastes the prompt into the watched terminal but NEVER presses Enter:
@@ -641,6 +661,14 @@ export interface ExtractedProjectData {
 // ─── IPC Channel Names ────────────────────────────────────────────────────────
 // Centralized so typos don't cause silent failures.
 
+// ─── Update check (main/update-check.ts) ─────────────────────────────────────
+// One check against GitHub Releases when the app opens. The robot shows this
+// notice; nothing downloads or installs until the user clicks.
+export type UpdateNotice =
+  | { phase: 'available'; version: string; notes: string }
+  | { phase: 'downloading'; version: string; notes: string; percent: number }
+  | { phase: 'ready'; version: string; notes: string }
+
 export const IPC = {
   LIST_WINDOWS:        'mybuildy:list-windows',
   ANALYZE_NOW:         'mybuildy:analyze-now',         // renderer → main (one analysis of the watched window, now)
@@ -677,7 +705,13 @@ export const IPC = {
   COMPANION_AUDIO:     'mybuildy:companion-audio',    // main → companion (ElevenLabs audio buffer to play)
   PUSH_TO_TALK:        'mybuildy:push-to-talk',       // companion → main (voice input audio)
   ASK_QUESTION:        'mybuildy:ask-question',       // companion → main (spoken question text)
-  TRANSCRIBE_AUDIO:    'mybuildy:transcribe-audio',   // companion → main (audio buffer for Whisper STT)
+  TRANSCRIBE_AUDIO:    'mybuildy:transcribe-audio',   // companion → main (audio buffer for ElevenLabs STT, only when no on-device listening)
+  LISTEN_TRANSCRIBE:   'listen:transcribe',           // companion → main (16 kHz samples → text, ON THIS COMPUTER; never sent anywhere)
+  LISTEN_PAUSED:       'listen:paused',               // main → companion (computer asleep / screen locked: stop listening)
+  LISTEN_SPOT:         'listen:spot',                 // companion → main (live 16 kHz samples → "Hey Buildy" scores, ON THIS COMPUTER)
+  LISTEN_STATUS:       'listen:status',               // companion/main window → main (is on-device listening available?)
+  WAKE_WORD_SET:       'listen:wake-word-set',        // main window → main (Settings > Voice: wake word on/off)
+  WAKE_WORD_CHANGED:   'listen:wake-word-changed',    // main → companion (start/stop listening now)
   COMPANION_ANSWER:    'mybuildy:companion-answer',   // main → companion (answer to spoken question)
   SELECT_WATCH_SOURCE: 'mybuildy:select-watch-source', // robot / main window → main (user picks a window)
   GUIDANCE_SHOW:       'guidance:show',             // companion → main (show guidance panel with payload)
@@ -723,7 +757,12 @@ export const IPC = {
   PROJECTS_SWITCHED:   'projects:switched',        // main → all windows (active project changed: drop per-project UI state)
   PROJECTS_SWITCH:     'projects:switch',          // renderer → main (set active) → ProjectRecord
   ROBOT_HIDE:          'robot:hide',               // robot → main (Hide: robot + guidance go away, watching continues)
-  APP_QUIT:            'app:quit',                 // robot / main window → main (confirmed Quit: shut everything down)
+  APP_QUIT:            'app:quit',
+  UPDATE_NOTICE:       'update:notice',            // main → robot (UpdateNotice, or null = nothing to show)
+  UPDATE_NOTICE_GET:   'update:notice-get',        // robot → main (the current UpdateNotice or null)
+  UPDATE_DOWNLOAD:     'update:download',          // robot → main (Update clicked: download it)
+  UPDATE_INSTALL:      'update:install',           // robot → main (Restart to update clicked)
+  UPDATE_DISMISS:      'update:dismiss',           // robot → main (Later clicked)                 // robot / main window → main (confirmed Quit: shut everything down)
   ROBOT_SCALE_GET:     'robot:scale-get',          // renderer → main → number (robot size)
   ROBOT_SCALE_SET:     'robot:scale-set',          // main window / robot → main (Settings: Robot size)
   ROBOT_ZOOM:          'robot:zoom',               // robot → main ('in' | 'out': Ctrl/Cmd + scroll wheel) → new scale

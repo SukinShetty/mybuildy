@@ -36,7 +36,7 @@ if (!existsSync(exe)) {
 
 const result = spawnSync('npx', ['playwright', 'test'], {
   stdio: 'inherit',
-  env: { ...process.env, MYBUILDY_E2E_EXE: exe },
+  env: { ...process.env, MYBUILDY_E2E_EXE: exe, MYBUILDY_DISABLE_UPDATE_CHECK: '1' },
   shell: process.platform === 'win32',
 })
 process.exit(result.status ?? 1)

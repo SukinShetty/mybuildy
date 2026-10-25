@@ -64,6 +64,20 @@ jobs:
       - name: Fetch Buildy's voice model (pinned revision, SHA-256 checked)
         run: npm run fetch:voice
 
+      # The "MyBuildy" wake word with the real on-device listening model on this OS:
+      # synthetic clips through the real segmenter + matcher. Informational (numbers
+      # in the log and artifact), so a slow runner can't block the build.
+      - name: Wake word eval (real model, quick)
+        continue-on-error: true
+        run: node --experimental-strip-types scripts/eval-wake-word.mjs --quick --out wake-eval-${{ runner.os }}.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wake-eval-${{ runner.os }}
+          path: wake-eval-*.json
+          if-no-files-found: ignore
+
       - name: E2E (dev build)
         run: npm run test:e2e
 
@@ -74,6 +88,19 @@ jobs:
 
       - name: Package Windows app
         run: npx electron-builder --win nsis --x64 --publish never
+
+      # The in-app update check needs these: the feed next to the installer and
+      # the updater config inside the app (from package.json build.publish).
+      - name: Update feed and updater config are generated
+        shell: bash
+        run: |
+          set -e
+          cat dist/latest.yml
+          grep -q "MyBuildy-Setup-.*\.exe" dist/latest.yml
+          ls dist/MyBuildy-Setup-*.exe.blockmap
+          cat dist/win-unpacked/resources/app-update.yml
+          grep -q "provider: github" dist/win-unpacked/resources/app-update.yml
+          grep -q "repo: mybuildy" dist/win-unpacked/resources/app-update.yml
 
       - name: E2E (packaged app)
         run: npm run test:e2e:packaged
@@ -136,6 +163,20 @@ jobs:
 
       - name: Fetch Buildy's voice model (pinned revision, SHA-256 checked)
         run: npm run fetch:voice
+
+      # The "MyBuildy" wake word with the real on-device listening model on this OS:
+      # synthetic clips through the real segmenter + matcher. Informational (numbers
+      # in the log and artifact), so a slow runner can't block the build.
+      - name: Wake word eval (real model, quick)
+        continue-on-error: true
+        run: node --experimental-strip-types scripts/eval-wake-word.mjs --quick --out wake-eval-${{ runner.os }}.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wake-eval-${{ runner.os }}
+          path: wake-eval-*.json
+          if-no-files-found: ignore
 
       - name: E2E (dev build)
         run: npm run test:e2e

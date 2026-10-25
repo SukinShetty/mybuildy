@@ -15,6 +15,7 @@ import type {
   WatchStatus,
   AnalyzeNowResult,
   VoiceFallback,
+  UpdateNotice,
   BuildyVoice,
   DeleteProjectResult,
   SetupInfo,
@@ -76,6 +77,19 @@ const mybuildyAPI = {
     const listener = (_event: Electron.IpcRendererEvent, fallback: VoiceFallback | null) => handler(fallback)
     ipcRenderer.on(IPC.VOICE_FALLBACK, listener)
     return () => ipcRenderer.removeListener(IPC.VOICE_FALLBACK, listener)
+  },
+
+  // Update check (once at launch): the notice, and the user's choices.
+  update: {
+    get: (): Promise<UpdateNotice | null> => ipcRenderer.invoke(IPC.UPDATE_NOTICE_GET),
+    onNotice: (handler: (notice: UpdateNotice | null) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, notice: UpdateNotice | null) => handler(notice)
+      ipcRenderer.on(IPC.UPDATE_NOTICE, listener)
+      return () => ipcRenderer.removeListener(IPC.UPDATE_NOTICE, listener)
+    },
+    download: (): void => ipcRenderer.send(IPC.UPDATE_DOWNLOAD),
+    install: (): void => ipcRenderer.send(IPC.UPDATE_INSTALL),
+    dismiss: (): void => ipcRenderer.send(IPC.UPDATE_DISMISS),
   },
 
   // Buildy's voice: choose Bella or Puck (from the next sentence), or hear a sample.
@@ -271,6 +285,34 @@ const mybuildyAPI = {
 
   askQuestion: (question: string): Promise<void> =>
     ipcRenderer.invoke(IPC.ASK_QUESTION, question),
+
+  // On-device listening (the mic button and the "Hey Buildy" wake word): the
+  // samples are turned into text on this computer and never sent anywhere.
+  transcribeLocally: (samples: Float32Array): Promise<{ success: boolean; text: string; error?: string }> =>
+    ipcRenderer.invoke(IPC.LISTEN_TRANSCRIBE, samples),
+
+  // "Hey Buildy" keyword scores for live microphone audio, computed on this computer.
+  spotWakeWord: (samples: Float32Array, reset = false): Promise<number[]> =>
+    ipcRenderer.invoke(IPC.LISTEN_SPOT, samples, reset),
+
+  listenStatus: (): Promise<'missing' | 'off' | 'loading' | 'ready' | 'failed'> =>
+    ipcRenderer.invoke(IPC.LISTEN_STATUS),
+
+  setWakeWord: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke(IPC.WAKE_WORD_SET, enabled),
+
+  // The computer went to sleep / locked (true) or woke / unlocked (false): wake word listening pauses.
+  onListenPaused: (handler: (paused: boolean) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, paused: boolean) => handler(paused)
+    ipcRenderer.on(IPC.LISTEN_PAUSED, listener)
+    return () => ipcRenderer.removeListener(IPC.LISTEN_PAUSED, listener)
+  },
+
+  onWakeWordChanged: (handler: (enabled: boolean) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, enabled: boolean) => handler(enabled)
+    ipcRenderer.on(IPC.WAKE_WORD_CHANGED, listener)
+    return () => ipcRenderer.removeListener(IPC.WAKE_WORD_CHANGED, listener)
+  },
 
   transcribeAudio: (audioBuffer: ArrayBuffer): Promise<{ success: boolean; text: string; error?: string }> =>
     ipcRenderer.invoke(IPC.TRANSCRIBE_AUDIO, Buffer.from(audioBuffer)),

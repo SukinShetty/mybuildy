@@ -1,0 +1,101 @@
+{
+ "wake": [
+  [
+   "Hey Buildy, give me the prompt.",
+   "give me the prompt"
+  ],
+  [
+   "Hey Buildy, what happened?",
+   "what happened"
+  ],
+  [
+   "Hey Buildy, what should I type next?",
+   "what should i type next"
+  ],
+  [
+   "Hey Buildy, explain this error.",
+   "explain this error"
+  ],
+  [
+   "Hey Buildy, is it done yet?",
+   "is it done yet"
+  ],
+  [
+   "Hey Buildy.",
+   "give me the prompt"
+  ],
+  [
+   "Hey Buildy, why did the test fail?",
+   "why did the test fail"
+  ],
+  [
+   "Hey Buildy, what is Claude doing right now?",
+   "what is claude doing right now"
+  ],
+  [
+   "Hey Buildy, did it work?",
+   "did it work"
+  ],
+  [
+   "Hey Buildy, how do I fix this?",
+   "how do i fix this"
+  ],
+  [
+   "Hey Buildy give me the prompt",
+   "give me the prompt"
+  ],
+  [
+   "Hey Buildy what should I do now",
+   "what should i do now"
+  ]
+ ],
+ "other": [
+  "Hey buddy, are you coming tonight?",
+  "Hey baby, I missed you.",
+  "A building collapsed downtown.",
+  "Hey Bill, the invoice is late.",
+  "They build bridges for a living.",
+  "Hey body, stay strong.",
+  "Hey Billy, nice catch.",
+  "Hey, beauty is in the details.",
+  "The building is closed on Sunday.",
+  "Hey, nobody is answering the phone.",
+  "Hey Betty, lunch is ready.",
+  "Hey bud, what happened?",
+  "Hey, build it and run the tests.",
+  "Hey Bailey, where is the remote?",
+  "Hey kiddo, time for school.",
+  "Hey guys, the deploy is done.",
+  "Okay buddy, give me the prompt.",
+  "Hey, give me the prompt.",
+  "My buddy built a robot.",
+  "Let me build this app.",
+  "I think the build is broken.",
+  "Hey Siri, what time is it?",
+  "Hey Google, play some music.",
+  "Hey there, how are you?",
+  "Ready, steady, go."
+ ],
+ "chat": [
+  "Okay so the tests are passing now, let me check the login page.",
+  "Claude just changed the database schema, I need to look at the migration.",
+  "Hmm, that error says the module was not found.",
+  "Let me open the terminal and run npm install again.",
+  "I think we should add a dark mode to the settings screen.",
+  "Can you hear me? I'm on a call right now.",
+  "Yeah, the deploy finished, the site is live.",
+  "My building's wifi is terrible today.",
+  "So my buddy said we should use Postgres instead.",
+  "Wait, why is the build taking so long?",
+  "I'll grab a coffee and come back in five minutes.",
+  "The prompt was too long, so it got cut off.",
+  "Let me read what it wrote before I accept it.",
+  "Okay, scroll up, there was a warning about the API key.",
+  "That's weird, it worked on my machine yesterday.",
+  "Mom, I'll call you back in ten minutes.",
+  "The meeting got moved to three o'clock.",
+  "Should I name the project my build tracker?",
+  "My boss wants the demo by Friday.",
+  "Alright, type yes and press enter."
+ ]
+}
