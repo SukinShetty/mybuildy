@@ -101,7 +101,9 @@ export function isGoalReached(analysis: AnalysisResult): boolean {
 // paste instructions ("paste the preview URL into your browser").
 const PROMPT_REFERENCES = [
   /\b(prompt|text|command|message)\s+below\b/i,
-  /\b(the|this|that|my|our|mybuildy'?s)\s+(suggested\s+|generated\s+|next\s+|ready-made\s+)?prompt\b/i,
+  // "the prompt" only with paste/copy/send/use: "Answer the prompt in your
+  // terminal" is about Claude Code's own permission prompt and must stay.
+  /\b(paste|copy|send|use)\b[^.!?]*\b(the|this|that|my|our|mybuildy'?s)\s+(suggested\s+|generated\s+|next\s+|ready-made\s+)?prompt\b/i,
   /\bpaste\s+(this|it|that|the\s+following)\s+(in|into)\s+(claude(\s+code)?|codex|cursor|the\s+(agent|coding\s+agent|terminal))\b/i,
 ]
 

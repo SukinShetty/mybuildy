@@ -179,6 +179,10 @@ describe('prepareForDisplay — ordinary paste instructions are kept when there 
     'Copy the error message and paste it into a search engine if it keeps happening.',
     'Paste the API key into Settings, then click Save.',
     'Open the link Claude Code printed and paste it into Chrome.',
+    // Claude Code's own permission prompt (nothing to paste; this IS the next step)
+    'Claude Code is asking to run a command. Read the prompt in the terminal and press 1 to allow it.',
+    'Answer the prompt in your terminal: type y and press Enter.',
+    'Claude is waiting at a yes/no prompt. Choose Yes if you trust the command.',
   ])('keeps: %s', (line) => {
     for (const needsHumanJudgment of [false, true]) {
       const out = prepareForDisplay(analysis({ nextPrompt: '', bestNextMove: line, needsHumanJudgment }))
