@@ -24,7 +24,13 @@ export interface UpdaterLike {
 }
 
 export interface UpdateCheckDeps {
-  updater: UpdaterLike
+  /**
+   * The updater, or a function returning it. Pass a function for the real
+   * electron-updater autoUpdater: merely reading that export constructs an
+   * updater, which throws on some dev / Linux runs (e.g. app version "0.0"),
+   * so it must only be touched when the check is enabled.
+   */
+  updater: UpdaterLike | (() => UpdaterLike)
   currentVersion: string
   /** Dev / unpackaged runs and test runs never check. */
   enabled: boolean
@@ -90,7 +96,10 @@ export function plainReleaseNotes(notes: unknown): string {
 }
 
 export function createUpdateCheck(deps: UpdateCheckDeps): UpdateCheck {
-  const { updater, notify, log } = deps
+  const { notify, log } = deps
+  // Resolved only when enabled: disabled runs never construct the updater.
+  const updater: UpdaterLike | null = !deps.enabled ? null
+    : typeof deps.updater === 'function' ? deps.updater() : deps.updater
   let checked = false
   let notice: UpdateNotice | null = null
   let dismissed = false
@@ -100,7 +109,7 @@ export function createUpdateCheck(deps: UpdateCheckDeps): UpdateCheck {
     if (!dismissed || next === null) notify(next)
   }
 
-  if (deps.enabled) {
+  if (updater) {
     // No install ID: electron-updater 6.x would otherwise create
     // userData/.updaterId (a random UUID, kept forever) and send it with every
     // update request as "x-user-staging-id" (only used for staged rollouts,
@@ -133,12 +142,12 @@ export function createUpdateCheck(deps: UpdateCheckDeps): UpdateCheck {
 
   return {
     async checkOnce() {
-      if (!deps.enabled || checked) return
+      if (!updater || checked) return
       checked = true
       try { await updater.checkForUpdates() } catch (e) { log(`[Update] check failed: ${e instanceof Error ? e.message : String(e)}`) }
     },
     async download() {
-      if (!notice || notice.phase !== 'available') return
+      if (!updater || !notice || notice.phase !== 'available') return
       set({ ...notice, phase: 'downloading', percent: 0 })
       try { await updater.downloadUpdate() } catch (e) {
         log(`[Update] download failed: ${e instanceof Error ? e.message : String(e)}`)
@@ -146,7 +155,7 @@ export function createUpdateCheck(deps: UpdateCheckDeps): UpdateCheck {
       }
     },
     install() {
-      if (notice?.phase !== 'ready') return
+      if (!updater || notice?.phase !== 'ready') return
       log(`[Update] restarting to install ${notice.version}`)
       deps.prepareForInstall?.()
       updater.quitAndInstall(false, true)
