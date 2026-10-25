@@ -321,6 +321,6 @@ export class WakeListener {
     } catch (error) {
       console.warn('[Wake] request failed:', String(error).slice(0, 120))
     }
-    if (session === this.session && this.phase === 'working') this.backToListening()
+    if (session === this.session && (this.phase as ListenIndicator) === 'working') this.backToListening()
   }
 }
