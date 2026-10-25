@@ -7,9 +7,11 @@ setdir, modelp, thr, outd = sys.argv[1], sys.argv[2], float(sys.argv[3]), sys.ar
 sh, n = map(int, (sys.argv[5] if len(sys.argv) > 5 else '0/1').split('/'))
 import kws, wake_audio as wa
 wa.init(setdir); os.makedirs(outd, exist_ok=True)
-model = [(np.array(W, np.float32), np.array(b, np.float32)) for W, b in json.load(open(modelp))['layers']]
+# MODEL 'none' = whisper-only baseline: each test clip whole; long audio in 4 s windows every 2 s
+model = None if modelp == 'none' else [(np.array(W, np.float32), np.array(b, np.float32)) for W, b in json.load(open(modelp))['layers']]
 SR = 16000
 def cuts(x):
+    if model is None: return [x] if len(x) < 8 * SR else [x[a:a + 4 * SR] for a in range(0, len(x) - 2 * SR, 2 * SR)]
     s = kws.scores(model, x); out = []; last = -99
     for j, v in enumerate(s):
         if v > thr and j - last > 25:
