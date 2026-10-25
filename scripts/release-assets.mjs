@@ -14,7 +14,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { expectedArtifactNames } from './release-version-lib.mjs'
+import { releaseFileNames } from './release-version-lib.mjs'
 import { replaceAssetInPlace, uploadOrder, findReleaseForTag } from './release-assets-lib.mjs'
 
 const [tag, dir] = process.argv.slice(2)
@@ -47,7 +47,7 @@ const api = {
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex')
 
 const version = tag.replace(/^v/, '')
-const names = uploadOrder([...expectedArtifactNames(version), 'SHA256SUMS.txt'])
+const names = uploadOrder([...releaseFileNames(version), 'SHA256SUMS.txt'])
 for (const n of names) if (!existsSync(join(dir, n))) throw new Error(`missing build file ${n}`)
 
 let release = findReleaseForTag(await gh('GET', `${API}/releases?per_page=100`), tag)

@@ -2,7 +2,9 @@
 #
 # Two build jobs run on the same tag — Windows (NSIS installer) and macOS (DMG
 # for Apple Silicon and Intel, Developer ID signed, notarized and stapled) — and upload their
-# files as workflow artifacts. A single final job then writes one
+# files as workflow artifacts, with the in-app update feeds (latest.yml,
+# latest-mac.yml, Mac update zips, blockmaps). Installed apps only see a new
+# version once its release is PUBLISHED (drafts are invisible to them). A single final job then writes one
 # SHA256SUMS.txt over every file and puts the files on the release. Only that
 # job talks to the Releases API, so two jobs can never race.
 #
@@ -69,7 +71,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: dist/MyBuildy-Setup-*.exe
+          # The installer, plus what the in-app update check reads: latest.yml
+          # (newest version + SHA-512 of the installer) and the blockmap.
+          path: |
+            dist/MyBuildy-Setup-*.exe
+            dist/MyBuildy-Setup-*.exe.blockmap
+            dist/latest.yml
           if-no-files-found: error
 
   macos-dmg:
@@ -107,14 +114,14 @@ jobs:
       # Developer ID signing (hardened runtime) and notarization of each .app:
       # electron-builder reads the certificate from CSC_LINK/CSC_KEY_PASSWORD
       # and notarizes with the APPLE_* credentials (repository secrets).
-      - name: Package macOS DMGs (arm64 + x64), signed and notarized
+      - name: Package macOS DMGs + update zips (arm64 + x64), signed and notarized
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npx electron-builder --mac dmg --arm64 --x64 --publish never
+        run: npx electron-builder --mac dmg zip --arm64 --x64 --publish never
 
       # Tag, package.json and the packaged apps must all carry the same version.
       - name: Check versions agree
@@ -133,7 +140,14 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: dist/MyBuildy-*.dmg
+          # The DMGs, plus what the in-app update check reads on a Mac:
+          # latest-mac.yml and the signed+notarized app as a zip (Squirrel.Mac
+          # updates only from a zip) with its blockmap.
+          path: |
+            dist/MyBuildy-*.dmg
+            dist/MyBuildy-*-mac.zip
+            dist/MyBuildy-*-mac.zip.blockmap
+            dist/latest-mac.yml
           if-no-files-found: error
 
   draft-release:
@@ -155,7 +169,7 @@ jobs:
       - name: Write SHA256SUMS.txt
         working-directory: release
         run: |
-          sha256sum MyBuildy-* > SHA256SUMS.txt
+          sha256sum MyBuildy-* latest.yml latest-mac.yml > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       # Replaces each file in place on the existing release (draft or published),

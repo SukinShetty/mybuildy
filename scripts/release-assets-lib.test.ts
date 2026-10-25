@@ -62,6 +62,11 @@ describe('replacing release files in place', () => {
     expect(uploadOrder(NAMES).at(-1)).toBe('SHA256SUMS.txt')
   })
 
+  it('update feeds go up after every installer and zip, so a feed never points at a missing file', () => {
+    const order = uploadOrder(['SHA256SUMS.txt', 'latest.yml', 'MyBuildy-Setup-0.1.1.exe', 'latest-mac.yml', 'MyBuildy-0.1.1-x64-mac.zip', 'MyBuildy-Setup-0.1.1.exe.blockmap'])
+    expect(order).toEqual(['MyBuildy-0.1.1-x64-mac.zip', 'MyBuildy-Setup-0.1.1.exe', 'MyBuildy-Setup-0.1.1.exe.blockmap', 'latest-mac.yml', 'latest.yml', 'SHA256SUMS.txt'])
+  })
+
   it('if the final rename fails, the old file is put back under its name', async () => {
     const name = 'MyBuildy-Setup-0.1.0.exe'
     const fake = fakeRelease({ [name]: 'old' }, false)

@@ -19,7 +19,7 @@ import type { ProviderType, NonSecretSettings, SecretName, ModelChoice, VoiceFal
 import {
   BUILDY_VOICES, DEFAULT_BUILDY_VOICE,
   HOURLY_CALL_CAP_MIN, HOURLY_CALL_CAP_MAX, NO_SECURE_STORAGE_MESSAGE, API_CREDITS_NOTE, PROVIDER_BILLING_URLS,
-  dataDestinationNote, suggestsNextModel,
+  dataDestinationNote, suggestsNextModel, UPDATE_CHECK_NOTE,
 } from '../types'
 import { DEFAULT_VOICE_ID, ELEVENLABS_VOICES, voiceLabel } from '../voice-options'
 
@@ -768,6 +768,7 @@ export function SettingsScreen(): React.ReactElement {
               hasElevenLabsKey: !!settings.secretFlags?.elevenLabsApiKey,
             })}
           </div>
+          <div style={styles.infoText}>{UPDATE_CHECK_NOTE}</div>
         </div>
 
         {/* Robot size: a 60%–200% slider and Reset (Ctrl or Cmd + scroll over the robot too) */}
