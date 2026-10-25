@@ -162,6 +162,8 @@ describe('Restart to update leaves the quit to the updater', () => {
     expect(index).toMatch(/window\.on\('close'[\s\S]{0,80}if \(!\(app as any\)\.isQuitting\)/)
     // window-all-closed does not quit underneath the updater.
     const allClosed = index.slice(index.indexOf("app.on('window-all-closed'"))
+    expect(index).toMatch(/app\.on\('before-quit', \(\) => \{[\s\S]{0,120}cleanUpForQuit\(\{ forUpdate: quittingForUpdate \}\)/)
+    expect(index).not.toMatch(/app\.exit\(/)
     expect(allClosed.slice(0, 300)).toMatch(/if \(!quitOnAllWindowsClosed\(quittingForUpdate\)\) return[\s\S]*app\.quit\(\)/)
   })
 

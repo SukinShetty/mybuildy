@@ -17,12 +17,23 @@ export interface ShutdownSteps {
   releaseShortcuts: () => void   // Ctrl/Cmd+Alt+B
 }
 
-export function createShutdown(steps: ShutdownSteps): () => void {
+/**
+ * `forUpdate`: electron-updater is quitting to install (Restart to update). It
+ * owns the windows and the quit (macOS: Squirrel's async handoff, then quit and
+ * relaunch), so only the work stops; no window, tray or robot is destroyed here.
+ */
+export function createShutdown(steps: ShutdownSteps): (opts?: { forUpdate?: boolean }) => void {
   let done = false
-  return () => {
+  return (opts = {}) => {
     steps.markQuitting()
     if (done) return
     done = true
+    if (opts.forUpdate) {
+      for (const step of [steps.stopWatching, steps.stopVoice, steps.releaseShortcuts]) {
+        try { step() } catch (error) { console.warn('[Shutdown] step failed (continuing):', error) }
+      }
+      return
+    }
     const run = (step: () => void): void => {
       try {
         step()

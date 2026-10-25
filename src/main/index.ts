@@ -451,7 +451,7 @@ const updateCheck = createUpdateCheck({
   log: (message) => debugLog(message),
   // Flags only: the panel's close handler then lets it close, and
   // 'window-all-closed' leaves the quit to the updater. The windows are closed
-  // by the updater's own quit (and 'before-quit' runs the clean-up then).
+  // by the updater's own quit; 'before-quit' then only stops the work.
   prepareForInstall: () => { ;(app as any).isQuitting = true; quittingForUpdate = true },
 })
 const fromRobot = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean =>
@@ -493,5 +493,6 @@ app.on('window-all-closed', () => {
 // its 'close' handler hides instead of closing unless isQuitting is set, which
 // would otherwise cancel the quit and leave the app running.
 app.on('before-quit', () => {
-  cleanUpForQuit()
+  // Restart to update: stop the work only; the updater closes the windows.
+  cleanUpForQuit({ forUpdate: quittingForUpdate })
 })
