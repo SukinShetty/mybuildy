@@ -58,6 +58,15 @@ export const FAKE_MODELS: ModelChoice[] = [
   { id: 'fake-mini', label: 'Fake Mini', suggested: true, curated: true },
 ]
 
+/** A real-sized model list (MYBUILDY_E2E_FAKE_MANY_MODELS=1), for layout tests. */
+export function fakeModels(): ModelChoice[] {
+  if (process.env['MYBUILDY_E2E_FAKE_MANY_MODELS'] !== '1') return FAKE_MODELS
+  return [
+    ...FAKE_MODELS,
+    ...Array.from({ length: 60 }, (_, i) => ({ id: `fake-${i}`, label: `Fake Model ${i}`, curated: true })),
+  ]
+}
+
 /**
  * The fake provider's screen analysis: the canned answer, after
  * MYBUILDY_E2E_FAKE_ANALYSIS_MS (default 0) so a test can see the app while an
