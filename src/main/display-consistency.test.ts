@@ -171,3 +171,33 @@ describe('prepareForDisplay — never points at a prompt that is not there', () 
     expect(out.bestNextMove).toBe('Paste the prompt below into Claude Code.')
   })
 })
+
+describe('prepareForDisplay — ordinary paste instructions are kept when there is no prompt', () => {
+  it.each([
+    'Copy the preview URL and paste it into your browser.',
+    'Paste your Supabase URL into the .env file, then restart the dev server.',
+    'Copy the error message and paste it into a search engine if it keeps happening.',
+    'Paste the API key into Settings, then click Save.',
+    'Open the link Claude Code printed and paste it into Chrome.',
+  ])('keeps: %s', (line) => {
+    for (const needsHumanJudgment of [false, true]) {
+      const out = prepareForDisplay(analysis({ nextPrompt: '', bestNextMove: line, needsHumanJudgment }))
+      expect(out.bestNextMove).toBe(line)
+    }
+  })
+
+  it.each([
+    'Paste the prompt below into Claude Code.',
+    'Paste the prompt into Claude Code and press Enter.',
+    'Copy the suggested prompt and send it to the agent.',
+    'Paste this into Claude Code.',
+    'Paste it into the terminal where Claude Code is running.',
+    'Use the text below to tell Claude what to do next.',
+  ])('rewrites (no prompt to point at): %s', (line) => {
+    const out = prepareForDisplay(analysis({ nextPrompt: '', bestNextMove: line }))
+    expect(out.bestNextMove).not.toBe(line)
+    // …but with a prompt on screen, the same line stays.
+    expect(prepareForDisplay(analysis({ nextPrompt: 'Add the save button.', bestNextMove: line })).bestNextMove).toBe(line)
+  })
+})
+

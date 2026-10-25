@@ -97,8 +97,16 @@ export function isGoalReached(analysis: AnalysisResult): boolean {
   return TEXT_FIELDS.some((field) => claimsGoalReached(analysis[field]))
 }
 
+// Only lines about pasting MyBuildy's OWN suggested prompt — never ordinary
+// paste instructions ("paste the preview URL into your browser").
+const PROMPT_REFERENCES = [
+  /\b(prompt|text|command|message)\s+below\b/i,
+  /\b(the|this|that|my|our|mybuildy'?s)\s+(suggested\s+|generated\s+|next\s+|ready-made\s+)?prompt\b/i,
+  /\bpaste\s+(this|it|that|the\s+following)\s+(in|into)\s+(claude(\s+code)?|codex|cursor|the\s+(agent|coding\s+agent|terminal))\b/i,
+]
+
 function pointsAtPrompt(text: string | undefined): boolean {
-  return !!text && /\b(prompt|text)\s+below\b|\bpaste\b/i.test(text)
+  return !!text && PROMPT_REFERENCES.some((re) => re.test(text))
 }
 
 /** Everything the panel shows goes through here (first display and every patch). */
