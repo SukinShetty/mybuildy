@@ -1,5 +1,5 @@
 // The microphone is opened only when the user chooses: a click on the mic
-// button, or while they have turned on the "MyBuildy" wake word (off by
+// button, or while they have turned on the "Hey Buildy" wake word (off by
 // default). Never during setup, and there is exactly one place that opens it.
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'fs'

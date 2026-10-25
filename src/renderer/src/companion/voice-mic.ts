@@ -2,7 +2,7 @@
 // button can do on this computer.
 //
 // The microphone is opened only (a) when the user clicks the mic button, or
-// (b) while the user has turned on the "MyBuildy" wake word in Settings > Voice.
+// (b) while the user has turned on the "Hey Buildy" wake word in Settings > Voice.
 // Setup never opens it (setup/microphone-rule.test.ts).
 
 import type { MicHandle } from './wake-listener'

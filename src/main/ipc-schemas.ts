@@ -97,7 +97,7 @@ export const nonSecretSettingsSchema = z.object({
   // One-time privacy-disclosure flag. Defaulted so callers built before the
   // flag existed still validate; missing means "not accepted yet".
   captureNoticeAccepted: z.boolean().default(false),
-  // "MyBuildy" wake word: off unless turned on (Settings > Voice).
+  // "Hey Buildy" wake word: off unless turned on (Settings > Voice).
   wakeWordEnabled: z.boolean().default(false),
 })
 

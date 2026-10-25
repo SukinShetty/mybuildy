@@ -67,6 +67,14 @@
         "to": "kokoro"
       },
       {
+        "from": "resources/wake",
+        "to": "wake"
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
+      {
         "from": "resources/whisper",
         "to": "whisper",
         "filter": [

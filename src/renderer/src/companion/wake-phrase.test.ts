@@ -1,29 +1,24 @@
 import { describe, it, expect } from 'vitest'
 import { findWakePhrase, routeCommand } from './wake-phrase'
 
-describe('findWakePhrase', () => {
+describe('findWakePhrase ("Hey Buildy")', () => {
   it.each([
-    ['MyBuildy give me the prompt', 'give me the prompt'],
-    ['Hey MyBuildy, what should I type?', 'what should I type?'],
-    ['My buildy, give me the prompt.', 'give me the prompt.'],
-    ['My building, give me the prompt.', 'give me the prompt.'],
-    ['Mybuild, show me the prompt', 'show me the prompt'],
+    ['Hey Buildy, give me the prompt.', 'give me the prompt.'],
+    ['Hey Buildy what should I type?', 'what should I type?'],
+    ['Hey, Bildy. Why did the tests fail?', 'Why did the tests fail?'],
+    ['A building, explain this error.', 'explain this error.'],
+    ['Hey Billy, what happened?', 'what happened?'],
+    ['Hey Buildy.', ''],
   ])('hears %s', (text, command) => {
     const m = findWakePhrase(text)
     expect(m.heard).toBe(true)
     expect(m.command).toBe(command)
   })
-  it.each(['my buddy is here', 'my body hurts', 'my baby is asleep', 'I will build it', 'my bill is due', 'maybe later', ''])(
-    'ignores %s', (text) => expect(findWakePhrase(text).heard).toBe(false))
-  it('"my building" counts only with a pause or a request after it', () => {
-    expect(findWakePhrase('My building has a new lift').heard).toBe(false)
-    expect(findWakePhrase('my building is on fire').heard).toBe(false)
-    expect(findWakePhrase('My building, why did the tests fail?').heard).toBe(true)
-    expect(findWakePhrase('My building what should I type').heard).toBe(true)
-    expect(findWakePhrase('My building.').heard).toBe(true)
-  })
-  it('only at the start (after an optional "hey")', () => {
-    expect(findWakePhrase('I told MyBuildy to stop').heard).toBe(false)
+  it.each(['hey buddy good to see you', 'a building fell down in the storm', 'they build houses near the river', 'my buddy is here',
+    'I told Buildy to stop', 'hey bill can you send the file', ''])('ignores %s', (text) => expect(findWakePhrase(text).heard).toBe(false))
+  it('strict rule (internal fallback) does not accept billy/buddy', () => {
+    expect(findWakePhrase('Hey Billy, what happened?', 'strict').heard).toBe(false)
+    expect(findWakePhrase('Hey Buildy, what happened?', 'strict').heard).toBe(true)
   })
 })
 

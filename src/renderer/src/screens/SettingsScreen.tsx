@@ -143,7 +143,7 @@ export function SettingsScreen(): React.ReactElement {
   // Buildy's voice: Female voice (Bella) or Male voice (Puck), saved at once (used from the next sentence), and a sample of each.
   const [samplePlaying, setSamplePlaying] = useState<BuildyVoice | null>(null)
   const [sampleMessage, setSampleMessage] = useState<string | null>(null)
-  // The "MyBuildy" wake word: saved at once; the robot starts or stops listening now.
+  // The "Hey Buildy" wake word: saved at once; the robot starts or stops listening now.
   const [listenModel, setListenModel] = useState<'missing' | 'off' | 'loading' | 'ready' | 'failed'>('off')
   useEffect(() => { void window.mybuildy.listenStatus().then(setListenModel).catch(() => {}) }, [])
   async function chooseWakeWord(enabled: boolean): Promise<void> {
@@ -671,7 +671,7 @@ export function SettingsScreen(): React.ReactElement {
               disabled={listenModel === 'missing' && settings.wakeWordEnabled !== true}
               onChange={(e) => { void chooseWakeWord(e.target.checked) }}
             />
-            Listen for &quot;MyBuildy&quot; (off unless you turn it on)
+            Wake word (experimental): say &quot;Hey Buildy&quot;
           </label>
           <div style={styles.sectionHint} data-testid="wake-word-explanation">{WAKE_WORD_EXPLANATION}</div>
           {listenModel === 'missing' && <div style={styles.sectionHint} role="status">{WAKE_WORD_UNAVAILABLE}</div>}

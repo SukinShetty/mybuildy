@@ -272,16 +272,27 @@ const mybuildyAPI = {
   askQuestion: (question: string): Promise<void> =>
     ipcRenderer.invoke(IPC.ASK_QUESTION, question),
 
-  // On-device listening (the mic button and the "MyBuildy" wake word): the
+  // On-device listening (the mic button and the "Hey Buildy" wake word): the
   // samples are turned into text on this computer and never sent anywhere.
   transcribeLocally: (samples: Float32Array): Promise<{ success: boolean; text: string; error?: string }> =>
     ipcRenderer.invoke(IPC.LISTEN_TRANSCRIBE, samples),
+
+  // "Hey Buildy" keyword scores for live microphone audio, computed on this computer.
+  spotWakeWord: (samples: Float32Array, reset = false): Promise<number[]> =>
+    ipcRenderer.invoke(IPC.LISTEN_SPOT, samples, reset),
 
   listenStatus: (): Promise<'missing' | 'off' | 'loading' | 'ready' | 'failed'> =>
     ipcRenderer.invoke(IPC.LISTEN_STATUS),
 
   setWakeWord: (enabled: boolean): Promise<void> =>
     ipcRenderer.invoke(IPC.WAKE_WORD_SET, enabled),
+
+  // The computer went to sleep / locked (true) or woke / unlocked (false): wake word listening pauses.
+  onListenPaused: (handler: (paused: boolean) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, paused: boolean) => handler(paused)
+    ipcRenderer.on(IPC.LISTEN_PAUSED, listener)
+    return () => ipcRenderer.removeListener(IPC.LISTEN_PAUSED, listener)
+  },
 
   onWakeWordChanged: (handler: (enabled: boolean) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, enabled: boolean) => handler(enabled)

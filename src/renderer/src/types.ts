@@ -145,7 +145,7 @@ export interface NonSecretSettings {
   buildyVoice: BuildyVoice       // Buildy's own voice (Kokoro): female (Bella, default) or male (Puck)
   hourlyCallCap: number          // Cost guard: max provider calls per rolling hour (20–600)
   captureNoticeAccepted: boolean // one-time privacy disclosure accepted (first window pick)
-  wakeWordEnabled: boolean       // "MyBuildy" wake word (Settings > Voice): OFF unless the user turns it on
+  wakeWordEnabled: boolean       // "Hey Buildy" wake word (Settings > Voice): OFF unless the user turns it on
 }
 
 // Buildy's own voices (Kokoro, bundled): the female voice (Bella) is the default.
@@ -343,13 +343,14 @@ export function dataDestinationNote(input: { provider: ProviderType; baseUrl: st
   return `Screenshots and prompts are sent to ${CLOUD_PROVIDER_NAMES[input.provider] ?? 'your AI provider'}. ${keys}`
 }
 
-// ─── "MyBuildy" wake word (Settings > Voice) ─────────────────────────────────
+// ─── "Hey Buildy" wake word (Settings > Voice) ─────────────────────────────────
 // Off unless the user turns it on. Plain words, no brand or model names.
 export const WAKE_WORD_EXPLANATION =
-  'Say "MyBuildy" and then your question, for example "MyBuildy, give me the prompt", and MyBuildy answers without a click. ' +
+  'Works best in a quiet room, and may sometimes miss you or wake by mistake; the mic button is always there. ' +
+  'Say "Hey Buildy" and then your question, for example "Hey Buildy, give me the prompt". ' +
   'While this is on, the microphone stays on whenever MyBuildy is watching your coding agent and the robot is on screen; ' +
-  'a red dot on the robot shows it is listening. Listening for "MyBuildy" happens entirely on this computer: no sound is ' +
-  'sent anywhere. Only the question you ask after "MyBuildy" is used, the same way as a question you type or ask with the mic button.'
+  'a dot on the robot shows it is listening. Listening for "Hey Buildy" happens entirely on this computer: no sound is ' +
+  'sent anywhere. Only the question you ask after "Hey Buildy" is used, the same way as a question you type or ask with the mic button.'
 export const WAKE_WORD_UNAVAILABLE =
   "This computer doesn't have MyBuildy's listening model, so the wake word can't be used. Reinstalling MyBuildy puts it back."
 
@@ -694,6 +695,8 @@ export const IPC = {
   ASK_QUESTION:        'mybuildy:ask-question',       // companion → main (spoken question text)
   TRANSCRIBE_AUDIO:    'mybuildy:transcribe-audio',   // companion → main (audio buffer for ElevenLabs STT, only when no on-device listening)
   LISTEN_TRANSCRIBE:   'listen:transcribe',           // companion → main (16 kHz samples → text, ON THIS COMPUTER; never sent anywhere)
+  LISTEN_PAUSED:       'listen:paused',               // main → companion (computer asleep / screen locked: stop listening)
+  LISTEN_SPOT:         'listen:spot',                 // companion → main (live 16 kHz samples → "Hey Buildy" scores, ON THIS COMPUTER)
   LISTEN_STATUS:       'listen:status',               // companion/main window → main (is on-device listening available?)
   WAKE_WORD_SET:       'listen:wake-word-set',        // main window → main (Settings > Voice: wake word on/off)
   WAKE_WORD_CHANGED:   'listen:wake-word-changed',    // main → companion (start/stop listening now)

@@ -8,7 +8,7 @@
 //   - All speech and analysis stop on quit
 //   - Tray provides Open/Quit shortcuts but the app does NOT hide to tray by default
 
-import { app, BrowserWindow, Tray, Menu, nativeImage, shell, globalShortcut, dialog } from 'electron'
+import { app, BrowserWindow, Tray, Menu, nativeImage, shell, globalShortcut, dialog, powerMonitor } from 'electron'
 import { join } from 'path'
 import { pathToFileURL } from 'node:url'
 import { IPC } from '../renderer/src/types'
@@ -393,6 +393,14 @@ app.whenReady().then(async () => {
   startKokoro()
   // On-device listening: loaded at startup only if the user turned the wake word on.
   void loadNonSecretSettings().then((s) => { if (s.wakeWordEnabled) void startListenEngine() }).catch(() => {})
+  // The wake word pauses while the computer sleeps or the screen is locked, and resumes after.
+  const pauseListening = (paused: boolean) => (): void => {
+    if (companionWindow && !companionWindow.isDestroyed()) companionWindow.webContents.send(IPC.LISTEN_PAUSED, paused)
+  }
+  powerMonitor.on('suspend', pauseListening(true))
+  powerMonitor.on('lock-screen', pauseListening(true))
+  powerMonitor.on('resume', pauseListening(false))
+  powerMonitor.on('unlock-screen', pauseListening(false))
 
   // e2e-only fixture hooks (no-op unless MYBUILDY_E2E=1 and not packaged).
   registerE2eTestHooks(() => companionWindow)

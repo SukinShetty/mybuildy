@@ -1,5 +1,6 @@
-// Behaviour of the "MyBuildy" wake word, with a fake microphone (through the real
-// openMicrophone), the real segmenter and matcher, and a fake listening model.
+// Behaviour of the "Hey Buildy" wake word, with a fake microphone (through the real
+// openMicrophone), the real segmenter and request matcher, a MOCKED keyword model
+// (spot) and a fake listening model.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { WakeListener, shouldListenForWakeWord, type ListenIndicator } from './wake-listener'
 import { openMicrophone, micButtonState, micErrorMessage } from './voice-mic'
@@ -37,13 +38,13 @@ const sec = (s: number, loud: boolean): Float32Array => {
   if (loud) for (let i = 0; i < a.length; i++) a[i] = 0.2 * Math.sin(i / 3)
   return a
 }
-function say(seconds = 1.2) {
-  // quiet lead-in, speech, then enough quiet to end the segment
+const flush = () => new Promise((r) => setTimeout(r, 0))
+async function say(seconds = 1.2) {
+  // quiet lead-in, speech, then enough quiet to end the segment; real time lets the keyword model keep up
   for (const part of [sec(0.6, false), sec(seconds, true), sec(1.2, false)]) {
-    for (let i = 0; i < part.length; i += 4096) pushAudio!(part.subarray(i, i + 4096))
+    for (let i = 0; i < part.length; i += 4096) { pushAudio!(part.subarray(i, i + 4096)); await flush() }
   }
 }
-const flush = () => new Promise((r) => setTimeout(r, 0))
 
 let media: ReturnType<typeof fakeMedia>
 let indicator: ListenIndicator[]
@@ -51,12 +52,19 @@ let messages: (string | undefined)[]
 let onCommand: ReturnType<typeof vi.fn>
 let heardText: string[]
 let fetchSpy: ReturnType<typeof vi.fn>
+let wakeNext: boolean // the mocked keyword model says "Hey Buildy" on its next call
 
 function makeListener(opts: { openMic?: () => Promise<never> } = {}) {
   const transcribe = vi.fn(async () => ({ success: true, text: heardText.shift() ?? '' }))
+  const spot = vi.fn(async (samples: Float32Array) => {
+    const n = Math.floor(samples.length / 1280)
+    if (wakeNext && n > 0) { wakeNext = false; return [...new Array(n - 1).fill(0.1), 0.9999] }
+    return new Array(n).fill(0.1)
+  })
   const timers: (() => void)[] = []
   const listener = new WakeListener({
     openMic: opts.openMic ?? (() => openMicrophone(media)),
+    spot,
     transcribe,
     onCommand: (c) => (onCommand as unknown as (c: unknown) => Promise<void>)(c),
     onIndicator: (s, m) => { indicator.push(s); messages.push(m) },
@@ -64,7 +72,7 @@ function makeListener(opts: { openMic?: () => Promise<never> } = {}) {
     setTimer: (fn) => { timers.push(fn); return timers.length },
     clearTimer: () => {},
   })
-  return { listener, transcribe, timers }
+  return { listener, transcribe, timers, spot }
 }
 
 beforeEach(() => {
@@ -77,6 +85,7 @@ beforeEach(() => {
   heardText = []
   onCommand = vi.fn(async () => {})
   pushAudio = null
+  wakeNext = false
 })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -112,36 +121,57 @@ describe('wake word', () => {
     expect(indicator.at(-1)).toBe('off')
   })
 
-  it('"MyBuildy give me the prompt" runs the next-prompt action', async () => {
+  it('"Hey Buildy, give me the prompt" (mocked detector) runs the next-prompt action', async () => {
     const { listener } = makeListener()
     await listener.start()
-    heardText = ['MyBuildy, give me the prompt.']
-    say()
-    await flush(); await flush()
+    heardText = ['Hey Buildy, give me the prompt.']
+    wakeNext = true
+    await say()
+    await flush(); await flush(); await flush()
+    expect(indicator).toContain('heard')
     expect(onCommand).toHaveBeenCalledWith({ kind: 'suggest-prompt' })
     expect(indicator).toContain('working')
     expect(indicator.at(-1)).toBe('listening')
   })
 
-  it('"MyBuildy" then a question asks it; the question is what follows the name', async () => {
+  it('"Hey Buildy" then a question asks it', async () => {
     const { listener } = makeListener()
     await listener.start()
-    heardText = ['My buildy.', 'why did the tests fail?']
-    say(0.6); await flush(); await flush()
+    heardText = ['Hey Buildy.', 'why did the tests fail?']
+    wakeNext = true
+    await say(0.6); await flush(); await flush()
     expect(indicator.at(-1)).toBe('heard')
-    say(); await flush(); await flush()
+    await say(); await flush(); await flush()
     expect(onCommand).toHaveBeenCalledWith({ kind: 'ask', question: 'why did the tests fail?' })
   })
 
-  it('ordinary talk does nothing, and nothing goes on the network before the wake word', async () => {
-    const { listener, transcribe } = makeListener()
+  it('a false wake with no request goes quietly back to listening: nothing sent anywhere', async () => {
+    const { listener, timers } = makeListener()
     await listener.start()
-    heardText = ['my building has a nice body', 'let me build this then ask my buddy']
-    say(); await flush(); await flush()
-    say(); await flush(); await flush()
-    expect(transcribe).toHaveBeenCalledTimes(2)
+    heardText = ['Okay.']
+    wakeNext = true
+    await say(); await flush(); await flush()
+    expect(indicator).toContain('heard')
+    timers.shift()!() // the request window ends
+    expect(indicator.at(-1)).toBe('listening')
     expect(onCommand).not.toHaveBeenCalled()
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('before the wake word nothing is transcribed and nothing goes on the network', async () => {
+    const { listener, transcribe, spot } = makeListener()
+    await listener.start()
+    heardText = ['give me the prompt']
+    await say(); await flush(); await flush()
+    await say(); await flush(); await flush()
+    expect(spot).toHaveBeenCalled()
+    expect(transcribe).not.toHaveBeenCalled()
+    expect(onCommand).not.toHaveBeenCalled()
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('pauses while the computer sleeps or the screen is locked', () => {
+    expect(shouldListenForWakeWord({ ...gate, wakeWordEnabled: true, systemPaused: true })).toBe(false)
   })
 
   it('silence never reaches the listening model', async () => {

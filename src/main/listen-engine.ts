@@ -22,6 +22,7 @@ type FromWorker =
   | { type: 'load-failed'; message: string }
   | { type: 'text'; id: string; text: string; ms: number }
   | { type: 'transcribe-failed'; id: string; message: string }
+  | { type: 'scores'; id: string; scores: number[]; error?: string }
 
 export type ListenStatus = 'missing' | 'off' | 'loading' | 'ready' | 'failed'
 
@@ -30,6 +31,7 @@ let status: ListenStatus = 'off'
 let ready: Promise<boolean> | null = null
 let nextId = 0
 const pending = new Map<string, { resolve: (r: LocalTranscript) => void; timer: ReturnType<typeof setTimeout> }>()
+const pendingSpots = new Map<string, (scores: number[]) => void>()
 
 export interface LocalTranscript { success: boolean; text: string; error?: string; ms?: number }
 
@@ -40,6 +42,11 @@ export function listenModelDir(): string {
 /** Is the on-device listening model on this computer? */
 export function listenModelAvailable(): boolean {
   return existsSync(join(listenModelDir(), MODEL_FILE))
+}
+
+/** The "Hey Buildy" keyword model (resources/wake: speech-embedding.onnx + hey-buildy.json). */
+export function wakeModelDir(): string {
+  return app.isPackaged ? join(process.resourcesPath, 'wake') : join(__dirname, '..', '..', 'resources', 'wake')
 }
 
 export function listenStatus(): ListenStatus {
@@ -70,6 +77,10 @@ export function startListenEngine(): Promise<boolean> {
         console.warn('[Listen] could not load:', message.message)
         logWatchEvent('listen-engine', { state: 'failed' })
         resolve(false)
+      } else if (message.type === 'scores') {
+        const done = pendingSpots.get(message.id)
+        pendingSpots.delete(message.id)
+        done?.(message.scores)
       } else {
         const job = pending.get(message.id)
         if (!job) return
@@ -87,9 +98,11 @@ export function startListenEngine(): Promise<boolean> {
       if (status !== 'failed') status = 'off'
       for (const [, job] of pending) { clearTimeout(job.timer); job.resolve({ success: false, text: '', error: 'Listening stopped.' }) }
       pending.clear()
+      for (const [, done] of pendingSpots) done([])
+      pendingSpots.clear()
       resolve(false)
     })
-    worker.postMessage({ type: 'load', modelDir: listenModelDir() })
+    worker.postMessage({ type: 'load', modelDir: listenModelDir(), wakeDir: existsSync(join(wakeModelDir(), 'hey-buildy.json')) ? wakeModelDir() : undefined })
   })
   return ready
 }
@@ -109,6 +122,16 @@ export async function transcribeLocally(samples: Float32Array): Promise<LocalTra
     pending.set(id, { resolve, timer })
     w.postMessage({ type: 'transcribe', id, samples })
   })
+}
+
+/** "Hey Buildy" keyword scores (one per 80 ms) for the next stretch of live microphone audio. On this computer only. */
+export async function spotLocally(samples: Float32Array, reset = false): Promise<number[]> {
+  if (samples.length > 16_000 * 2) return []
+  if (!(await startListenEngine()) || !worker) return []
+  if (reset) worker.postMessage({ type: 'spot-reset' })
+  const id = `s${++nextId}`
+  const w = worker
+  return new Promise<number[]>((resolve) => { pendingSpots.set(id, resolve); w.postMessage({ type: 'spot', id, samples }) })
 }
 
 export function stopListenEngine(): void {

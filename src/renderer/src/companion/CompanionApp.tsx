@@ -60,9 +60,10 @@ export function CompanionApp(): React.ReactElement {
   const stopGenRef = useRef(new StopGeneration())
   const micRef = useRef<OpenedMic | null>(null)
   const samplesRef = useRef<Float32Array[]>([])
-  // On-device listening (mic button + wake word) and the "MyBuildy" wake word (off by default).
+  // On-device listening (mic button + wake word) and the "Hey Buildy" wake word (off by default).
   const [listenModel, setListenModel] = useState<ListenModel>('off')
   const [wakeWordEnabled, setWakeWordEnabled] = useState(false)
+  const [systemPaused, setSystemPaused] = useState(false) // asleep / screen locked
   const [listenIndicator, setListenIndicator] = useState<ListenIndicator>('off')
   const [listenMessage, setListenMessage] = useState<string | null>(null)
   const [robotVisible, setRobotVisible] = useState(document.visibilityState !== 'hidden')
@@ -357,7 +358,7 @@ export function CompanionApp(): React.ReactElement {
     }
   }, [])
 
-  // ─── "MyBuildy" wake word ──────────────────────────────────────────
+  // ─── "Hey Buildy" wake word ──────────────────────────────────────────
   // Listening runs only while ALL are true: the user turned it on (Settings >
   // Voice), MyBuildy is watching, the one-time notice was accepted, the robot is
   // on screen, the listening model is here, and the mic button isn't recording.
@@ -376,6 +377,7 @@ export function CompanionApp(): React.ReactElement {
   if (!wakeRef.current) {
     wakeRef.current = new WakeListener({
       openMic: () => openMicrophone(),
+      spot: (samples, reset) => window.mybuildy.spotWakeWord(samples, reset),
       transcribe: (samples) => window.mybuildy.transcribeLocally(samples),
       onCommand: (command) => runVoiceCommandRef.current(command),
       onIndicator: (state, message) => { setListenIndicator(state); setListenMessage(message ?? null) },
@@ -387,7 +389,7 @@ export function CompanionApp(): React.ReactElement {
 
   const shouldListen = shouldListenForWakeWord({
     wakeWordEnabled, watching: !!watchedWindowName, captureNoticeAccepted, robotVisible, listenModel,
-    micButtonRecording: micState === 'listening',
+    micButtonRecording: micState === 'listening', systemPaused,
   })
   useEffect(() => {
     const listener = wakeRef.current
@@ -396,6 +398,7 @@ export function CompanionApp(): React.ReactElement {
     else listener.stop()
   }, [shouldListen])
   useEffect(() => () => wakeRef.current?.stop(), [])
+  useEffect(() => window.mybuildy.onListenPaused((paused) => setSystemPaused(paused)), [])
   useEffect(() => window.mybuildy.onWakeWordChanged((on) => { setWakeWordEnabled(on); if (on) setListenMessage(null) }), [])
   useEffect(() => {
     const onVisibility = (): void => setRobotVisible(document.visibilityState !== 'hidden')
@@ -679,10 +682,10 @@ function Btn({ icon, onClick, active, title }: { icon: string; onClick: () => vo
 
 function listenIndicatorTitle(state: ListenIndicator, message: string | null): string {
   if (state === 'error') return message ?? 'Listening stopped.'
-  if (state === 'heard') return 'Heard "MyBuildy" — ask your question'
+  if (state === 'heard') return 'Heard "Hey Buildy" — ask your question'
   if (state === 'working') return 'Working on what you asked'
-  if (state === 'starting') return 'Starting to listen for "MyBuildy"'
-  return 'Listening for "MyBuildy" (on this computer). Turn off in Settings > Voice.'
+  if (state === 'starting') return 'Starting to listen for "Hey Buildy"'
+  return 'Listening for "Hey Buildy" (on this computer). Turn off in Settings > Voice.'
 }
 
 function MicBtn({ micState, onClick, disabled, explain, indicator, indicatorTitle }: {

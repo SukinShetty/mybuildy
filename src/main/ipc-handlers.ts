@@ -8,7 +8,7 @@ import { providerHttpError, readJson, mapProviderError } from './ai/provider-err
 import { providerFetch, withCancellation, CancelledError } from './ai/fetch-with-timeout'
 import { guardedSender } from './project-guard'
 import { watchLogDir, logWatchEvent } from './watch-log'
-import { listenStatus, startListenEngine, transcribeLocally } from './listen-engine'
+import { listenStatus, spotLocally, startListenEngine, transcribeLocally } from './listen-engine'
 import { e2eFakes, isE2eDevRun, FAKE_MODELS, fakeTerminalSourceId } from './e2e-fakes'
 import { hideRobot } from './robot-visibility'
 import { applyRobotScale, getRobotScale } from './companion-window'
@@ -184,13 +184,13 @@ export function registerIpcHandlers(
     if (companion && !companion.isDestroyed()) companion.webContents.send(IPC.VOICE_PREPARING, preparing)
   })
 
-  // Settings → Voice: the "MyBuildy" wake word on/off, saved at once; the robot starts or stops listening now.
+  // Settings → Voice: the "Hey Buildy" wake word on/off, saved at once; the robot starts or stops listening now.
   ipcMain.handle(IPC.WAKE_WORD_SET, async (event, enabledRaw: unknown) => {
     assertFromMainWindow(event, mainWcId(), 'WAKE_WORD_SET')
     if (typeof enabledRaw !== 'boolean') throw new Error('Expected on/off on WAKE_WORD_SET')
     await saveNonSecretSettings({ ...(await loadNonSecretSettings()), wakeWordEnabled: enabledRaw })
     invalidateSettingsCache()
-    if (enabledRaw) void startListenEngine() // load the listening model now, so the first "MyBuildy" is quick
+    if (enabledRaw) void startListenEngine() // load the listening model now, so the first "Hey Buildy" is quick
     const companion = getCompanionWindow()
     if (companion && !companion.isDestroyed()) companion.webContents.send(IPC.WAKE_WORD_CHANGED, enabledRaw)
     logWatchEvent('wake-word', { enabled: enabledRaw })
@@ -203,6 +203,12 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.LISTEN_TRANSCRIBE, async (_event, samplesRaw: unknown) => {
     if (!(samplesRaw instanceof Float32Array)) return { success: false, text: '', error: 'Expected audio samples.' }
     return transcribeLocally(samplesRaw)
+  })
+
+  // "Hey Buildy" keyword scores for live microphone audio (wake word on). On this computer only.
+  ipcMain.handle(IPC.LISTEN_SPOT, async (_event, samplesRaw: unknown, resetRaw: unknown) => {
+    if (!(samplesRaw instanceof Float32Array)) return []
+    return spotLocally(samplesRaw, resetRaw === true)
   })
 
   // Settings → Voice: Bella or Puck, saved at once, used from the next sentence.
