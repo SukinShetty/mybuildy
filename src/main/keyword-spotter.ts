@@ -1,22 +1,19 @@
 // keyword-spotter.ts — the "Hey Buildy" detector, run on this computer.
-// Audio (16 kHz) → a mel spectrogram and a general speech "embedding" (two small
-// ONNX models from the open-source openWakeWord project) → our own small
-// classifier, trained only for "Hey Buildy" (scripts/wake-eval/kws.py). Every
-// 80 ms it gives a score 0–1; a score over the threshold means the name was said.
-// Pure apart from the two model calls, which are passed in (tested with fakes).
+// Audio (16 kHz) → our own log-mel (log-mel.ts) → Google's speech_embedding network
+// (Apache-2.0, re-exported to ONNX by us; see THIRD_PARTY_NOTICES.md) → our own small
+// classifier trained only for "Hey Buildy" (scripts/wake-eval/kws.py). Every 80 ms it
+// gives a score 0–1; a score over the threshold means the name was said.
+// Pure apart from the embedding model call, which is passed in (tested with fakes).
+import { BANDS, HOP, WIN, logMelFrame } from './log-mel'
 
 export interface SpotterModels {
-  /** mel model: audio as int16-range floats → frames × 32 values */
-  mel(samples: Float32Array): Promise<Float32Array>
-  /** embedding model: 76 × 32 mel values → 96 values */
+  /** embedding network: 76 × 32 log-mel values → 96 values */
   embed(mel76: Float32Array): Promise<Float32Array>
 }
 export interface Classifier { layers: [number[][], number[]][]; frames: number }
 
-const CHUNK = 1280 // 80 ms
-const MEL_CONTEXT = 480 // the mel model needs 3 extra hops of audio before each chunk
-const MEL_BINS = 32
-const MEL_WINDOW = 76
+const MEL_WINDOW = 76 // log-mel frames per embedding (~0.775 s)
+const MEL_STEP = 8 // one embedding every 8 frames (80 ms)
 
 export function classify(c: Classifier, input: Float32Array): number {
   let h: Float32Array = input
@@ -33,9 +30,9 @@ export function classify(c: Classifier, input: Float32Array): number {
 }
 
 export class KeywordSpotter {
-  private pending = new Float32Array(0)
-  private tail = new Float32Array(MEL_CONTEXT)
+  private audio = new Float32Array(0) // samples not yet fully used by a frame
   private mel: Float32Array[] = []
+  private sinceEmbed = 0
   private emb: Float32Array[] = []
   private models: SpotterModels
   private classifier: Classifier
@@ -45,26 +42,24 @@ export class KeywordSpotter {
   }
 
   reset(): void {
-    this.pending = new Float32Array(0); this.tail = new Float32Array(MEL_CONTEXT); this.mel = []; this.emb = []
+    this.audio = new Float32Array(0); this.mel = []; this.sinceEmbed = 0; this.emb = []
   }
 
   /** Feed audio (-1..1 floats); returns one score per 80 ms step completed. */
   async push(samples: Float32Array): Promise<number[]> {
-    const all = new Float32Array(this.pending.length + samples.length)
-    all.set(this.pending); all.set(samples, this.pending.length)
+    const all = new Float32Array(this.audio.length + samples.length)
+    all.set(this.audio); all.set(samples.map((v) => Math.max(-1, Math.min(1, v))), this.audio.length)
     const scores: number[] = []
     let at = 0
-    for (; at + CHUNK <= all.length; at += CHUNK) {
-      const chunk = new Float32Array(MEL_CONTEXT + CHUNK)
-      chunk.set(this.tail); chunk.set(all.subarray(at, at + CHUNK), MEL_CONTEXT)
-      this.tail = chunk.slice(chunk.length - MEL_CONTEXT)
-      const pcm = chunk.map((v) => Math.round(Math.max(-1, Math.min(1, v)) * 32767))
-      const m = await this.models.mel(pcm)
-      for (let f = 0; f + MEL_BINS <= m.length; f += MEL_BINS) this.mel.push(m.slice(f, f + MEL_BINS).map((v) => v / 10 + 2))
-      if (this.mel.length > MEL_WINDOW + 16) this.mel.splice(0, this.mel.length - MEL_WINDOW - 16)
+    for (; at + WIN <= all.length; at += HOP) {
+      const row = new Float32Array(BANDS); logMelFrame(all, at, row, 0)
+      this.mel.push(row); if (this.mel.length > MEL_WINDOW) this.mel.shift()
       if (this.mel.length < MEL_WINDOW) continue
-      const win = new Float32Array(MEL_WINDOW * MEL_BINS)
-      this.mel.slice(-MEL_WINDOW).forEach((row, r) => win.set(row, r * MEL_BINS))
+      // embedding k uses frames 8k .. 8k+75
+      if (this.sinceEmbed-- > 0) continue
+      this.sinceEmbed = MEL_STEP - 1
+      const win = new Float32Array(MEL_WINDOW * BANDS)
+      this.mel.forEach((r, i) => win.set(r, i * BANDS))
       this.emb.push(await this.models.embed(win))
       if (this.emb.length > this.classifier.frames) this.emb.shift()
       if (this.emb.length < this.classifier.frames) continue
@@ -72,7 +67,7 @@ export class KeywordSpotter {
       this.emb.forEach((e, r) => x.set(e, r * 96))
       scores.push(classify(this.classifier, x))
     }
-    this.pending = all.slice(at)
+    this.audio = all.slice(at)
     return scores
   }
 }
