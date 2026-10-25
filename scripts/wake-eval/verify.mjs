@@ -19,7 +19,8 @@ for (const f of readdirSync(dir).filter((f) => f.startsWith('index-'))) for (con
   for (const cut of row.cuts) {
     if (done.has(cut) || i++ % shards !== shard) continue
     const b = readFileSync(join(dir, cut)); const x = new Float32Array(b.buffer, b.byteOffset, b.length / 4)
-    const t0 = performance.now(); const text = clean((await asr(agc(x), { max_new_tokens: 48 })).text)
+    const t0 = performance.now(); let text = ''
+    try { text = clean((await asr(agc(x), { max_new_tokens: 48 })).text) } catch (e) { text = '' } // rare tokenizer decode error: count as nothing heard
     appendFileSync(out, JSON.stringify({ id: row.id, cut, text, app: findWakePhrase(text).heard, ms: Math.round(performance.now() - t0) }) + '\n')
   }
 }
