@@ -61,7 +61,9 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/main/bootstrap.ts'),
           // Buildy's voice, run as a utility process (kokoro-engine.ts).
-          'kokoro-worker': resolve(__dirname, 'src/main/kokoro-worker.ts')
+          'kokoro-worker': resolve(__dirname, 'src/main/kokoro-worker.ts'),
+          // On-device listening (wake word + mic button), also a utility process (listen-engine.ts).
+          'listen-worker': resolve(__dirname, 'src/main/listen-worker.ts')
         },
         output: {
           // Keep the deferred app chunk NEXT TO index.js (not in chunks/…):

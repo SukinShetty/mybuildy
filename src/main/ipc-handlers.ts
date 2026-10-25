@@ -8,6 +8,7 @@ import { providerHttpError, readJson, mapProviderError } from './ai/provider-err
 import { providerFetch, withCancellation, CancelledError } from './ai/fetch-with-timeout'
 import { guardedSender } from './project-guard'
 import { watchLogDir, logWatchEvent } from './watch-log'
+import { listenStatus, spotLocally, startListenEngine, transcribeLocally } from './listen-engine'
 import { e2eFakes, isE2eDevRun, fakeModels, fakeTerminalSourceId } from './e2e-fakes'
 import { hideRobot } from './robot-visibility'
 import { applyRobotScale, getRobotScale } from './companion-window'
@@ -181,6 +182,33 @@ export function registerIpcHandlers(
   setVoicePreparingNotice((preparing) => {
     const companion = getCompanionWindow()
     if (companion && !companion.isDestroyed()) companion.webContents.send(IPC.VOICE_PREPARING, preparing)
+  })
+
+  // Settings → Voice: the "Hey Buildy" wake word on/off, saved at once; the robot starts or stops listening now.
+  ipcMain.handle(IPC.WAKE_WORD_SET, async (event, enabledRaw: unknown) => {
+    assertFromMainWindow(event, mainWcId(), 'WAKE_WORD_SET')
+    if (typeof enabledRaw !== 'boolean') throw new Error('Expected on/off on WAKE_WORD_SET')
+    await saveNonSecretSettings({ ...(await loadNonSecretSettings()), wakeWordEnabled: enabledRaw })
+    invalidateSettingsCache()
+    if (enabledRaw) void startListenEngine() // load the listening model now, so the first "Hey Buildy" is quick
+    const companion = getCompanionWindow()
+    if (companion && !companion.isDestroyed()) companion.webContents.send(IPC.WAKE_WORD_CHANGED, enabledRaw)
+    logWatchEvent('wake-word', { enabled: enabledRaw })
+  })
+
+  ipcMain.handle(IPC.LISTEN_STATUS, async () => listenStatus())
+
+  // On-device speech → text (mic button and wake word). No network: the
+  // samples go to the listening model's own process and the text comes back.
+  ipcMain.handle(IPC.LISTEN_TRANSCRIBE, async (_event, samplesRaw: unknown) => {
+    if (!(samplesRaw instanceof Float32Array)) return { success: false, text: '', error: 'Expected audio samples.' }
+    return transcribeLocally(samplesRaw)
+  })
+
+  // "Hey Buildy" keyword scores for live microphone audio (wake word on). On this computer only.
+  ipcMain.handle(IPC.LISTEN_SPOT, async (_event, samplesRaw: unknown, resetRaw: unknown) => {
+    if (!(samplesRaw instanceof Float32Array)) return []
+    return spotLocally(samplesRaw, resetRaw === true)
   })
 
   // Settings → Voice: Bella or Puck, saved at once, used from the next sentence.
@@ -506,7 +534,9 @@ export function registerIpcHandlers(
         console.warn(`[IPC] rejected invalid input on channel SAVE_SETTINGS: baseUrl not allowed for provider ${nonSecret.provider}`)
         throw new Error('Disallowed base URL on SAVE_SETTINGS')
       }
-      await saveNonSecretSettings(nonSecret)
+      // The wake word is only ever switched by its own toggle (WAKE_WORD_SET):
+      // a general Settings save keeps whatever is on disk, so it can't turn the microphone on.
+      await saveNonSecretSettings({ ...nonSecret, wakeWordEnabled: (await loadNonSecretSettings()).wakeWordEnabled })
       // A custom endpoint moved to a different origin: its key is not carried
       // over — the user enters it again for the new endpoint.
       if (nonSecret.provider === 'custom' && hasSecret('customApiKey') &&

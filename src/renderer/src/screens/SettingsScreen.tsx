@@ -19,7 +19,7 @@ import type { ProviderType, NonSecretSettings, SecretName, ModelChoice, VoiceFal
 import {
   BUILDY_VOICES, DEFAULT_BUILDY_VOICE,
   HOURLY_CALL_CAP_MIN, HOURLY_CALL_CAP_MAX, NO_SECURE_STORAGE_MESSAGE, API_CREDITS_NOTE, PROVIDER_BILLING_URLS,
-  dataDestinationNote, suggestsNextModel, UPDATE_CHECK_NOTE,
+  dataDestinationNote, suggestsNextModel, UPDATE_CHECK_NOTE, WAKE_WORD_EXPLANATION, WAKE_WORD_UNAVAILABLE,
 } from '../types'
 import { DEFAULT_VOICE_ID, ELEVENLABS_VOICES, voiceLabel } from '../voice-options'
 
@@ -143,6 +143,14 @@ export function SettingsScreen(): React.ReactElement {
   // Buildy's voice: Female voice (Bella) or Male voice (Puck), saved at once (used from the next sentence), and a sample of each.
   const [samplePlaying, setSamplePlaying] = useState<BuildyVoice | null>(null)
   const [sampleMessage, setSampleMessage] = useState<string | null>(null)
+  // The "Hey Buildy" wake word: saved at once; the robot starts or stops listening now.
+  const [listenModel, setListenModel] = useState<'missing' | 'off' | 'loading' | 'ready' | 'failed'>('off')
+  useEffect(() => { void window.mybuildy.listenStatus().then(setListenModel).catch(() => {}) }, [])
+  async function chooseWakeWord(enabled: boolean): Promise<void> {
+    setSettings({ ...useAppStore.getState().settings, wakeWordEnabled: enabled })
+    await window.mybuildy.setWakeWord(enabled)
+  }
+
   async function chooseBuildyVoice(voice: BuildyVoice): Promise<void> {
     setSettings({ ...useAppStore.getState().settings, buildyVoice: voice }) // shown at once
     await window.mybuildy.setBuildyVoice(voice)
@@ -270,6 +278,8 @@ export function SettingsScreen(): React.ReactElement {
       buildyVoice: useAppStore.getState().settings.buildyVoice,
       hourlyCallCap: clampCap(hourlyCallCap),
       captureNoticeAccepted: settings.captureNoticeAccepted,
+      // Saved on its own (listen:wake-word-set); main keeps the saved value on a general save.
+      wakeWordEnabled: useAppStore.getState().settings.wakeWordEnabled === true,
       ...overrides,
     }
   }
@@ -652,9 +662,23 @@ export function SettingsScreen(): React.ReactElement {
               <strong>{voiceFallback.headline}.</strong> {voiceFallback.reason}
             </div>
           )}
+          <div style={styles.voiceOptionLabel}>Talk to MyBuildy hands-free</div>
+          <label style={styles.voiceChoiceLabel}>
+            <input
+              type="checkbox"
+              data-testid="wake-word-toggle"
+              checked={settings.wakeWordEnabled === true}
+              disabled={listenModel === 'missing' && settings.wakeWordEnabled !== true}
+              onChange={(e) => { void chooseWakeWord(e.target.checked) }}
+            />
+            Wake word (experimental): say &quot;Hey Buildy&quot;
+          </label>
+          <div style={styles.sectionHint} data-testid="wake-word-explanation">{WAKE_WORD_EXPLANATION}</div>
+          {listenModel === 'missing' && <div style={styles.sectionHint} role="status">{WAKE_WORD_UNAVAILABLE}</div>}
           <div style={styles.voiceOptionLabel}>ElevenLabs (your own key) — optional</div>
           <div style={styles.sectionHint}>
-            With a key, MyBuildy speaks with the ElevenLabs voice you choose here, and the mic button appears.
+            With a key, MyBuildy speaks with the ElevenLabs voice you choose here.
+            {listenModel === 'missing' ? ' It also turns your mic-button questions into text.' : ''}
           </div>
           {settings.hasElevenLabsKey && !replacingElevenKey ? (
             <div style={styles.keySavedRow}>
@@ -766,6 +790,7 @@ export function SettingsScreen(): React.ReactElement {
               provider,
               baseUrl,
               hasElevenLabsKey: !!settings.secretFlags?.elevenLabsApiKey,
+              listensOnDevice: listenModel !== 'missing' && listenModel !== 'failed',
             })}
           </div>
           <div style={styles.infoText}>{UPDATE_CHECK_NOTE}</div>
