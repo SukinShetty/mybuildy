@@ -213,10 +213,11 @@ This is everything MyBuildy sends, and where:
 | **Spoken guidance** | The text being read aloud | **ElevenLabs**, only if you saved an ElevenLabs key (otherwise Buildy's own voice, or your computer's voice, speaks on this computer and nothing is sent) |
 | **Grading and verification** (checking a suggested prompt; checking that a pasted prompt worked) | The prompt, its expected outcome and context | **Your AI provider** — on Anthropic this is a separate call to a smaller, cheaper model |
 | **Connection and model setup** (model list, vision check) | Requests carrying your API key; the vision check also sends a tiny test image | **Your AI provider** |
+| **Update check** (once, when the app opens; installed Windows and Mac apps only) | Requests for the latest release's version information (the releases feed and `latest.yml` / `latest-mac.yml`) — nothing about you, your screen or your projects. If you click **Update**, the new installer downloads from there too | **GitHub** (this repository's public Releases) |
 
 With Ollama, LM Studio or a custom endpoint on this computer, "your AI provider" is on this computer too. A custom endpoint elsewhere receives what the table says your AI provider receives. Each API key is only ever sent to its own provider's address, and a custom endpoint's key only to the endpoint it was entered for.
 
-Nothing else is sent: MyBuildy makes no other network requests (no analytics, no update checks).
+Nothing else is sent: MyBuildy makes no other network requests (no analytics, no telemetry). The update check never repeats while the app is open, never downloads or installs anything until you click, and if you are offline it stays silent.
 
 | Stored on this computer | Where |
 |---|---|

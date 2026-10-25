@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { dataDestinationNote } from './types'
+import { dataDestinationNote, UPDATE_CHECK_NOTE } from './types'
 
 const ELEVEN = 'Spoken guidance and voice questions are sent to ElevenLabs.'
 
@@ -29,5 +29,13 @@ describe('Settings privacy wording is always true', () => {
     expect(note).toContain('Screenshots and prompts are sent to Anthropic.')
     expect(note).toContain('never sent back to this screen')
     expect(note).not.toMatch(/never exposed|never enter/i)
+  })
+})
+
+describe('the update check is disclosed truthfully', () => {
+  it('names GitHub, says once on open, and that nothing downloads without a click', () => {
+    expect(UPDATE_CHECK_NOTE).toMatch(/GitHub/)
+    expect(UPDATE_CHECK_NOTE).toMatch(/once/)
+    expect(UPDATE_CHECK_NOTE).toMatch(/click Update/)
   })
 })

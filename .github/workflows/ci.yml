@@ -75,6 +75,19 @@ jobs:
       - name: Package Windows app
         run: npx electron-builder --win nsis --x64 --publish never
 
+      # The in-app update check needs these: the feed next to the installer and
+      # the updater config inside the app (from package.json build.publish).
+      - name: Update feed and updater config are generated
+        shell: bash
+        run: |
+          set -e
+          cat dist/latest.yml
+          grep -q "MyBuildy-Setup-.*\.exe" dist/latest.yml
+          ls dist/MyBuildy-Setup-*.exe.blockmap
+          cat dist/win-unpacked/resources/app-update.yml
+          grep -q "provider: github" dist/win-unpacked/resources/app-update.yml
+          grep -q "repo: mybuildy" dist/win-unpacked/resources/app-update.yml
+
       - name: E2E (packaged app)
         run: npm run test:e2e:packaged
 

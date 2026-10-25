@@ -8,7 +8,8 @@
 //   - All speech and analysis stop on quit
 //   - Tray provides Open/Quit shortcuts but the app does NOT hide to tray by default
 
-import { app, BrowserWindow, Tray, Menu, nativeImage, shell, globalShortcut, dialog } from 'electron'
+import { app, BrowserWindow, Tray, Menu, nativeImage, shell, globalShortcut, dialog, ipcMain } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { join } from 'path'
 import { pathToFileURL } from 'node:url'
 import { IPC } from '../renderer/src/types'
@@ -34,6 +35,7 @@ import { ROBOT_SHORTCUT, registerRobotShortcut } from './robot-shortcut'
 import { loadRobotScale } from './robot-prefs'
 import { loadSetupState, needsSetup } from './setup-state'
 import { initWatchLog } from './watch-log'
+import { createUpdateCheck, updateCheckEnabled } from './update-check'
 
 // ─── Global web-contents security guard ──────────────────────────────────────
 // Applies to EVERY renderer (main, companion, guidance, voice — and anything
@@ -413,6 +415,9 @@ app.whenReady().then(async () => {
 
   console.log('MyBuildy launched — companion only (panel hidden unless setup is needed)')
 
+  // Is there a newer version? Asked once per launch, never again until the next launch.
+  void updateCheck.checkOnce()
+
   // ─── Dev-only: companion idle-CPU measurement (Phase 6, target < 3%) ───────
   // Logs the companion renderer process's CPU every 5s via app.getAppMetrics().
   // percentCPUUsage is measured since the PREVIOUS getAppMetrics() call, so the
@@ -431,6 +436,26 @@ app.whenReady().then(async () => {
     app.on('before-quit', () => clearInterval(cpuTimer))
   }
 })
+
+// ─── Update check: once, when the app opens (update-check.ts) ─────────────────
+// Packaged Windows/macOS builds only. The robot shows the notice; nothing is
+// downloaded or installed without a click.
+const updateCheck = createUpdateCheck({
+  updater: autoUpdater,
+  currentVersion: app.getVersion(),
+  enabled: updateCheckEnabled({ isPackaged: app.isPackaged, platform: process.platform, env: process.env }),
+  notify: (notice) => {
+    if (companionWindow && !companionWindow.isDestroyed()) companionWindow.webContents.send(IPC.UPDATE_NOTICE, notice)
+  },
+  log: (message) => debugLog(message),
+  beforeInstall: () => cleanUpForQuit(),
+})
+const fromRobot = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean =>
+  !!companionWindow && !companionWindow.isDestroyed() && event.sender.id === companionWindow.webContents.id
+ipcMain.handle(IPC.UPDATE_NOTICE_GET, () => updateCheck.current())
+ipcMain.on(IPC.UPDATE_DOWNLOAD, (event) => { if (fromRobot(event)) void updateCheck.download() })
+ipcMain.on(IPC.UPDATE_INSTALL, (event) => { if (fromRobot(event)) updateCheck.install() })
+ipcMain.on(IPC.UPDATE_DISMISS, (event) => { if (fromRobot(event)) updateCheck.dismiss() })
 
 // macOS: clicking the Dock icon, or opening MyBuildy again from Applications,
 // brings a hidden robot back; with the robot already showing it opens the panel.
