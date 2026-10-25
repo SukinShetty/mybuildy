@@ -21,7 +21,8 @@
     "test:live": "vitest run --config vitest.live.config.ts",
     "test:e2e": "npm run build && playwright test",
     "test:e2e:packaged": "node scripts/e2e-packaged.mjs",
-    "fetch:voice": "node scripts/fetch-kokoro-model.mjs"
+    "fetch:voice": "node scripts/fetch-kokoro-model.mjs && node scripts/fetch-listen-model.mjs",
+    "eval:wake-word": "node --experimental-strip-types scripts/eval-wake-word.mjs"
   },
   "dependencies": {
     "nemp-mcp-server": "^0.2.2",
@@ -64,6 +65,23 @@
       {
         "from": "resources/kokoro",
         "to": "kokoro"
+      },
+      {
+        "from": "resources/wake",
+        "to": "wake"
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "resources/whisper",
+        "to": "whisper",
+        "filter": [
+          "**/*.json",
+          "**/encoder_model.onnx",
+          "**/decoder_model_merged_quantized.onnx"
+        ]
       }
     ],
     "afterPack": "scripts/after-pack.js",
@@ -95,11 +113,12 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "MyBuildy uses the microphone only when you click the mic to ask a question.",
+        "NSMicrophoneUsageDescription": "MyBuildy uses the microphone only when you click the mic, or while you have turned on the MyBuildy wake word. Listening for the wake word happens on this Mac.",
         "NSAppleEventsUsageDescription": "MyBuildy asks System Events to bring your terminal to the front and press Cmd+V when you click Paste into terminal. It never presses Return."
       },
       "signIgnore": [
-        "Contents/Resources/kokoro/"
+        "Contents/Resources/kokoro/",
+        "Contents/Resources/whisper/"
       ]
     },
     "dmg": {
