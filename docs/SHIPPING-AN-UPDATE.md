@@ -59,3 +59,14 @@ Use a throwaway public repo so nothing appears on `SukinShetty/mybuildy` release
 5. Open the installed 0.9.0: expect the notice, click Update, then Restart, and
    check the installed version is 0.9.1 (Windows: Settings → Apps; Mac: Finder → Get Info). On a Mac, run it from /Applications — Squirrel.Mac cannot replace an app running from the DMG or a quarantined Downloads folder. Also try: offline (nothing shown), Later (gone).
 6. Delete the test repo and uninstall.
+
+## Privacy notes for maintainers
+
+- electron-updater normally writes `userData/.updaterId` and sends it as
+  `x-user-staging-id` (for staged rollouts). `update-check.ts` replaces it with
+  one all-zero value shared by every install, so no ID file is created. Don't
+  use `stagingPercentage` in `latest*.yml` — with the shared value every install
+  would get it at once.
+- "Restart to update" only sets quit flags and calls `quitAndInstall()`; the
+  updater closes the windows itself (on macOS after its Squirrel handoff).
+  Don't add window-closing or `app.quit()` before it.

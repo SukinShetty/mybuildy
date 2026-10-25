@@ -35,7 +35,7 @@ import { ROBOT_SHORTCUT, registerRobotShortcut } from './robot-shortcut'
 import { loadRobotScale } from './robot-prefs'
 import { loadSetupState, needsSetup } from './setup-state'
 import { initWatchLog } from './watch-log'
-import { createUpdateCheck, updateCheckEnabled } from './update-check'
+import { createUpdateCheck, updateCheckEnabled, quitOnAllWindowsClosed } from './update-check'
 
 // ─── Global web-contents security guard ──────────────────────────────────────
 // Applies to EVERY renderer (main, companion, guidance, voice — and anything
@@ -440,6 +440,7 @@ app.whenReady().then(async () => {
 // ─── Update check: once, when the app opens (update-check.ts) ─────────────────
 // Packaged Windows/macOS builds only. The robot shows the notice; nothing is
 // downloaded or installed without a click.
+let quittingForUpdate = false
 const updateCheck = createUpdateCheck({
   updater: autoUpdater,
   currentVersion: app.getVersion(),
@@ -448,7 +449,10 @@ const updateCheck = createUpdateCheck({
     if (companionWindow && !companionWindow.isDestroyed()) companionWindow.webContents.send(IPC.UPDATE_NOTICE, notice)
   },
   log: (message) => debugLog(message),
-  beforeInstall: () => cleanUpForQuit(),
+  // Flags only: the panel's close handler then lets it close, and
+  // 'window-all-closed' leaves the quit to the updater. The windows are closed
+  // by the updater's own quit (and 'before-quit' runs the clean-up then).
+  prepareForInstall: () => { ;(app as any).isQuitting = true; quittingForUpdate = true },
 })
 const fromRobot = (event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean =>
   !!companionWindow && !companionWindow.isDestroyed() && event.sender.id === companionWindow.webContents.id
@@ -480,6 +484,7 @@ app.on('activate', () => {
 // Safety net: if all windows close for any reason, quit
 app.on('window-all-closed', () => {
   stopAnalysisLoop('quit')
+  if (!quitOnAllWindowsClosed(quittingForUpdate)) return // the updater is quitting to install
   app.quit()
 })
 

@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createUpdateCheck, updateCheckEnabled, plainReleaseNotes, type UpdaterLike } from './update-check'
+import { createUpdateCheck, updateCheckEnabled, plainReleaseNotes, quitOnAllWindowsClosed, SHARED_STAGING_ID, type UpdaterLike } from './update-check'
+import { NsisUpdater, MacUpdater } from 'electron-updater'
+import { mkdtempSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import type { UpdateNotice } from '../renderer/src/types'
 
 // A fake electron-updater autoUpdater: records calls, lets the test fire events.
@@ -24,10 +27,12 @@ function setup(enabled = true) {
   const updater = fakeUpdater()
   const shown: (UpdateNotice | null)[] = []
   const log = vi.fn()
-  const beforeInstall = vi.fn()
-  const check = createUpdateCheck({ updater, currentVersion: '0.1.0', enabled, notify: (n) => shown.push(n), log, beforeInstall })
+  const calls: string[] = []
+  const prepareForInstall = vi.fn(() => calls.push('prepare'))
+  updater.quitAndInstall.mockImplementation(() => { calls.push('quitAndInstall') })
+  const check = createUpdateCheck({ updater, currentVersion: '0.1.0', enabled, notify: (n) => shown.push(n), log, prepareForInstall })
   const last = () => shown[shown.length - 1]
-  return { updater, shown, last, log, beforeInstall, check }
+  return { updater, shown, last, log, prepareForInstall, calls, check }
 }
 
 describe('update check on open', () => {
@@ -65,7 +70,7 @@ describe('update check on open', () => {
   })
 
   it('Update downloads; the download finishing offers Restart, which installs', async () => {
-    const { updater, check, last, beforeInstall } = setup()
+    const { updater, check, last, prepareForInstall, calls } = setup()
     updater.emit('update-available', { version: '0.1.1', releaseNotes: 'Notes' })
     check.install() // not downloaded yet: nothing
     expect(updater.quitAndInstall).not.toHaveBeenCalled()
@@ -78,7 +83,8 @@ describe('update check on open', () => {
     expect(last()).toEqual({ phase: 'ready', version: '0.1.1', notes: 'Notes' })
     expect(updater.quitAndInstall).not.toHaveBeenCalled()
     check.install()
-    expect(beforeInstall).toHaveBeenCalledTimes(1)
+    expect(prepareForInstall).toHaveBeenCalledTimes(1)
+    expect(calls).toEqual(['prepare', 'quitAndInstall'])
     expect(updater.quitAndInstall).toHaveBeenCalledTimes(1)
   })
 
@@ -141,5 +147,69 @@ describe('plainReleaseNotes', () => {
     expect(plainReleaseNotes([{ version: '0.1.1', note: '<p>A</p>' }])).toBe('A')
     expect(plainReleaseNotes(undefined)).toBe('')
     expect(plainReleaseNotes('x'.repeat(5000)).length).toBeLessThanOrEqual(1201)
+  })
+})
+
+describe('Restart to update leaves the quit to the updater', () => {
+  it('index.ts only sets flags before quitAndInstall — it never closes windows or quits first', () => {
+    const index = readFileSync(join(__dirname, 'index.ts'), 'utf8')
+    const prepare = /prepareForInstall: \(\) => \{([^}]*)\}/.exec(index)![1]
+    expect(prepare).toContain('isQuitting = true')
+    expect(prepare).toContain('quittingForUpdate = true')
+    expect(prepare).not.toMatch(/cleanUpForQuit|shutdownApp|destroy|close\(|quit\(/)
+    expect(index).not.toContain('beforeInstall')
+    // The panel's close handler hides instead of closing unless isQuitting is set.
+    expect(index).toMatch(/window\.on\('close'[\s\S]{0,80}if \(!\(app as any\)\.isQuitting\)/)
+    // window-all-closed does not quit underneath the updater.
+    const allClosed = index.slice(index.indexOf("app.on('window-all-closed'"))
+    expect(allClosed.slice(0, 300)).toMatch(/if \(!quitOnAllWindowsClosed\(quittingForUpdate\)\) return[\s\S]*app\.quit\(\)/)
+  })
+
+  it('all windows closing quits normally, but not while the updater is installing', () => {
+    expect(quitOnAllWindowsClosed(false)).toBe(true)
+    expect(quitOnAllWindowsClosed(true)).toBe(false)
+  })
+})
+
+// The REAL electron-updater (installed version), not a fake: what it would send.
+describe('no install ID (real electron-updater)', () => {
+  function fakeApp(dir: string) {
+    return {
+      version: '0.1.0', name: 'MyBuildy', isPackaged: true,
+      appUpdateConfigPath: join(dir, 'app-update.yml'), userDataPath: dir, baseCachePath: dir,
+      whenReady: () => Promise.resolve(), quit() {}, relaunch() {}, onQuit() {},
+    }
+  }
+  async function headersSent(updater: any): Promise<Record<string, string>> {
+    let headers: Record<string, string> = {}
+    updater.clientPromise = Promise.resolve({ setRequestHeaders: (h: Record<string, string>) => { headers = h }, getLatestVersion: async () => ({ version: '0.1.1' }) })
+    await updater.getUpdateInfoAndProvider()
+    return headers
+  }
+
+  it('without the fix it creates .updaterId and sends it (the problem, reproduced)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'upd-'))
+    const updater = new NsisUpdater(null, fakeApp(dir) as any)
+    updater.logger = null
+    const headers = await headersSent(updater)
+    expect(readdirSync(dir)).toContain('.updaterId')
+    expect(headers['x-user-staging-id']).toMatch(/^[0-9a-f-]{36}$/)
+    expect(headers['x-user-staging-id']).not.toBe(SHARED_STAGING_ID)
+  })
+
+  it('with createUpdateCheck: no ID file, and only the shared all-zero value is sent', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'upd-'))
+    const updater: any = new NsisUpdater(null, fakeApp(dir) as any)
+    createUpdateCheck({ updater, currentVersion: '0.1.0', enabled: true, notify: () => {}, log: () => {} })
+    const headers = await headersSent(updater)
+    expect(headers['x-user-staging-id']).toBe(SHARED_STAGING_ID)
+    expect(readdirSync(dir)).not.toContain('.updaterId')
+    expect(updater.autoDownload).toBe(false)
+    expect(updater.autoInstallOnAppQuit).toBe(false)
+  })
+
+  it('the Mac updater uses the same request code (it cannot be constructed outside Electron)', () => {
+    expect(MacUpdater.prototype.checkForUpdates).toBe(NsisUpdater.prototype.checkForUpdates)
+    expect((MacUpdater.prototype as any).getUpdateInfoAndProvider).toBe((NsisUpdater.prototype as any).getUpdateInfoAndProvider)
   })
 })

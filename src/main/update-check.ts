@@ -31,8 +31,12 @@ export interface UpdateCheckDeps {
   /** Push the notice (or null) to the robot. */
   notify: (notice: UpdateNotice | null) => void
   log: (message: string) => void
-  /** Runs just before quitAndInstall (lets the app mark itself as quitting). */
-  beforeInstall?: () => void
+  /**
+   * Runs just before quitAndInstall. Must ONLY set flags (so close / quit
+   * handlers let the updater's own quit through) — never close windows or quit:
+   * the updater closes them itself, after its handoff (Squirrel.Mac on macOS).
+   */
+  prepareForInstall?: () => void
 }
 
 export interface UpdateCheck {
@@ -44,6 +48,18 @@ export interface UpdateCheck {
 }
 
 const MAX_NOTES = 1200
+
+/** The same for every install, so it identifies nobody (see createUpdateCheck). */
+export const SHARED_STAGING_ID = '00000000-0000-0000-0000-000000000000'
+
+/**
+ * 'window-all-closed' normally quits the app. While the updater is quitting to
+ * install, it owns the quit (macOS: Squirrel closes the windows, then quits and
+ * relaunches), so the app must not quit underneath it.
+ */
+export function quitOnAllWindowsClosed(quittingForUpdate: boolean): boolean {
+  return !quittingForUpdate
+}
 
 /**
  * Only installed (packaged) Windows and macOS builds check. Dev runs, Linux
@@ -85,6 +101,12 @@ export function createUpdateCheck(deps: UpdateCheckDeps): UpdateCheck {
   }
 
   if (deps.enabled) {
+    // No install ID: electron-updater 6.x would otherwise create
+    // userData/.updaterId (a random UUID, kept forever) and send it with every
+    // update request as "x-user-staging-id" (only used for staged rollouts,
+    // which MyBuildy does not use). Every install sends this same all-zero value.
+    ;(updater as unknown as { stagingUserIdPromise: { value: Promise<string> } }).stagingUserIdPromise = { value: Promise.resolve(SHARED_STAGING_ID) }
+
     // Never download or install on its own.
     updater.autoDownload = false
     updater.autoInstallOnAppQuit = false
@@ -126,7 +148,7 @@ export function createUpdateCheck(deps: UpdateCheckDeps): UpdateCheck {
     install() {
       if (notice?.phase !== 'ready') return
       log(`[Update] restarting to install ${notice.version}`)
-      deps.beforeInstall?.()
+      deps.prepareForInstall?.()
       updater.quitAndInstall(false, true)
     },
     dismiss() {

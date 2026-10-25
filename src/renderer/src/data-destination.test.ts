@@ -37,5 +37,8 @@ describe('the update check is disclosed truthfully', () => {
     expect(UPDATE_CHECK_NOTE).toMatch(/GitHub/)
     expect(UPDATE_CHECK_NOTE).toMatch(/once/)
     expect(UPDATE_CHECK_NOTE).toMatch(/click Update/)
+    expect(UPDATE_CHECK_NOTE).toMatch(/IP address/)
+    expect(UPDATE_CHECK_NOTE).toMatch(/no account, install ID/)
+    expect(UPDATE_CHECK_NOTE).not.toMatch(/nothing about you/i)
   })
 })

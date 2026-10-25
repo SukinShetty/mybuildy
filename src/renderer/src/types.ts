@@ -340,7 +340,7 @@ export function dataDestinationNote(input: { provider: ProviderType; baseUrl: st
 
 /** Settings → About: the one request MyBuildy itself makes (update-check.ts). */
 export const UPDATE_CHECK_NOTE =
-  'When MyBuildy opens, it asks GitHub once whether a newer version is published. Nothing about you or your projects is sent, and nothing downloads until you click Update.'
+  'When MyBuildy opens, it asks GitHub once whether a newer version is published. GitHub sees your IP address, as with any web request; no account, install ID or anything about your projects is sent. Nothing downloads until you click Update.'
 
 // ─── Paste into terminal ─────────────────────────────────────────────────────
 // MyBuildy pastes the prompt into the watched terminal but NEVER presses Enter:
