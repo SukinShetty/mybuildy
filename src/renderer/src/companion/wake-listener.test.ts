@@ -240,3 +240,56 @@ describe('mic button', () => {
     expect(micErrorMessage({ name: 'NotFoundError' }, 'win32')).toMatch(/No microphone found/)
   })
 })
+
+// Review findings on 26c14e19: each of these failed there.
+describe('wake word: state stays true to the detector (regressions)', () => {
+  it('stop + start while a keyword check is still running: detection resumes, the indicator is not lying', async () => {
+    const { listener, spot } = makeListener()
+    let release!: (v: number[]) => void
+    spot.mockImplementationOnce(() => new Promise<number[]>((r) => { release = r }))
+    await listener.start()
+    await say(0.4) // first check is now stuck in flight
+    listener.stop()
+    await listener.start()
+    release([0.1]); await flush()
+    expect(indicator.at(-1)).toBe('listening')
+    const before = spot.mock.calls.length
+    heardText = ['Hey Buildy, give me the prompt.']
+    wakeNext = true
+    await say(); await flush(); await flush(); await flush()
+    expect(spot.mock.calls.length).toBeGreaterThan(before) // the detector really runs again
+    expect(onCommand).toHaveBeenCalledWith({ kind: 'suggest-prompt' })
+  })
+
+  it('a slow empty transcription that outlives the 6 s window does not leave it armed: later speech needs a new wake', async () => {
+    const { listener, transcribe, timers } = makeListener()
+    let release!: (v: { success: boolean; text: string }) => void
+    transcribe.mockImplementationOnce(() => new Promise((r) => { release = r }))
+    await listener.start()
+    wakeNext = true
+    await say(0.6); await flush() // wake + a segment whose transcription hangs
+    expect(transcribe).toHaveBeenCalledTimes(1)
+    timers.at(-1)!() // window deadline passes while transcribing
+    release({ success: true, text: '' }); await flush(); await flush()
+    expect(indicator.at(-1)).toBe('listening')
+    heardText = ['why did the tests fail?']
+    await say(); await flush(); await flush()
+    expect(onCommand).not.toHaveBeenCalled()
+    expect(transcribe).toHaveBeenCalledTimes(1)
+  })
+
+  it('a late transcription of a real request after the window closed is discarded', async () => {
+    let t = 0
+    const { listener, transcribe } = makeListener()
+    ;(listener as unknown as { deps: { now: () => number } }).deps.now = () => t
+    let release!: (v: { success: boolean; text: string }) => void
+    transcribe.mockImplementationOnce(() => new Promise((r) => { release = r }))
+    await listener.start()
+    wakeNext = true
+    await say(0.6); await flush()
+    t += 7000 // the window timer is late (busy event loop), but the deadline has passed
+    release({ success: true, text: 'why did the tests fail?' }); await flush(); await flush()
+    expect(onCommand).not.toHaveBeenCalled()
+    expect(indicator.at(-1)).toBe('listening')
+  })
+})

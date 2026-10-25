@@ -21,6 +21,7 @@ import { isProjectsRecoveryError, readProjectsBackup, restoreProjectsBackup, pre
 import { createVoicePlayerWindow, destroyVoicePlayer, stopVoice } from './voice-player'
 import { startKokoro, stopKokoro } from './kokoro-engine'
 import { startListenEngine, stopListenEngine } from './listen-engine'
+import { PowerPause } from './power-pause'
 import { migratePlaintextSecrets } from './secure-store'
 import { settingsFilePath, loadRedactedSettings, loadGoal, loadNonSecretSettings } from './memory'
 import { isModelConfigured } from '../renderer/src/types'
@@ -394,13 +395,12 @@ app.whenReady().then(async () => {
   // On-device listening: loaded at startup only if the user turned the wake word on.
   void loadNonSecretSettings().then((s) => { if (s.wakeWordEnabled) void startListenEngine() }).catch(() => {})
   // The wake word pauses while the computer sleeps or the screen is locked, and resumes after.
-  const pauseListening = (paused: boolean) => (): void => {
+  // Sleep and lock are tracked separately (power-pause.ts): waking onto a locked screen stays paused.
+  let startLocked = false
+  try { startLocked = powerMonitor.getSystemIdleState(1) === 'locked' } catch { /* unsupported: assume unlocked */ }
+  new PowerPause((paused) => {
     if (companionWindow && !companionWindow.isDestroyed()) companionWindow.webContents.send(IPC.LISTEN_PAUSED, paused)
-  }
-  powerMonitor.on('suspend', pauseListening(true))
-  powerMonitor.on('lock-screen', pauseListening(true))
-  powerMonitor.on('resume', pauseListening(false))
-  powerMonitor.on('unlock-screen', pauseListening(false))
+  }, startLocked).attach(powerMonitor)
 
   // e2e-only fixture hooks (no-op unless MYBUILDY_E2E=1 and not packaged).
   registerE2eTestHooks(() => companionWindow)
