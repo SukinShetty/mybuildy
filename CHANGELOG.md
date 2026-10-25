@@ -6,6 +6,10 @@ All notable changes to MyBuildy are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Update check when the app opens.** Installed Windows and Mac apps ask GitHub Releases once at launch whether a newer version is published. If so, the robot shows "New update available" with the release notes, **Update** (downloads) and **Later**; once downloaded, **Restart to update** installs. Nothing downloads or installs without a click; offline or errors stay silent (logged). Releases now also carry `latest.yml`, `latest-mac.yml`, Mac update zips and blockmaps. See `docs/SHIPPING-AN-UPDATE.md`.
+
 ## [0.1.0] — 2026-09-23
 
 First public release, source-available under the PolyForm Shield License 1.0.0. Windows installer and macOS DMGs (Apple Silicon and Intel) via GitHub Releases; Linux runs from source (untested).

@@ -15,6 +15,7 @@ import type {
   WatchStatus,
   AnalyzeNowResult,
   VoiceFallback,
+  UpdateNotice,
   BuildyVoice,
   DeleteProjectResult,
   SetupInfo,
@@ -76,6 +77,19 @@ const mybuildyAPI = {
     const listener = (_event: Electron.IpcRendererEvent, fallback: VoiceFallback | null) => handler(fallback)
     ipcRenderer.on(IPC.VOICE_FALLBACK, listener)
     return () => ipcRenderer.removeListener(IPC.VOICE_FALLBACK, listener)
+  },
+
+  // Update check (once at launch): the notice, and the user's choices.
+  update: {
+    get: (): Promise<UpdateNotice | null> => ipcRenderer.invoke(IPC.UPDATE_NOTICE_GET),
+    onNotice: (handler: (notice: UpdateNotice | null) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, notice: UpdateNotice | null) => handler(notice)
+      ipcRenderer.on(IPC.UPDATE_NOTICE, listener)
+      return () => ipcRenderer.removeListener(IPC.UPDATE_NOTICE, listener)
+    },
+    download: (): void => ipcRenderer.send(IPC.UPDATE_DOWNLOAD),
+    install: (): void => ipcRenderer.send(IPC.UPDATE_INSTALL),
+    dismiss: (): void => ipcRenderer.send(IPC.UPDATE_DISMISS),
   },
 
   // Buildy's voice: choose Bella or Puck (from the next sentence), or hear a sample.

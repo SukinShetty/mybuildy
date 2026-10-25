@@ -50,7 +50,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npx electron-builder --mac dmg --arm64 --x64 --publish never
+        run: npx electron-builder --mac dmg zip --arm64 --x64 --publish never
 
       - name: Notarize and staple the DMGs; verify every signature
         env:

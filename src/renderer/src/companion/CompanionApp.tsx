@@ -14,7 +14,8 @@ import { robotSizeText } from '../robot-size'
 import { robotHiddenMessage, hideButtonTitle } from '../robot-hidden'
 import { useRefreshWhileOpen } from '../components/useRefreshWhileOpen'
 import { BAR_BACKGROUND_CSS, ICON_COLOR, ICON_HOVER_COLOR, ICON_HOVER_BACKGROUND_CSS } from './robot-theme'
-import type { AnalysisResult, WatchStatus, VoiceFallback } from '../types'
+import type { AnalysisResult, WatchStatus, VoiceFallback, UpdateNotice } from '../types'
+import { updateNoticeView } from './update-notice'
 import { isModelConfigured, CAPTURE_NOTICE_MESSAGE } from '../types'
 import type { CompanionState, MicState } from '../store/useCompanionStore'
 
@@ -46,6 +47,7 @@ export function CompanionApp(): React.ReactElement {
   // ElevenLabs failed, so the computer's voice is speaking — said plainly, with why.
   const [voiceFallback, setVoiceFallback] = useState<VoiceFallback | null>(null)
   const [voiceNoticeDismissed, setVoiceNoticeDismissed] = useState<string | null>(null)
+  const [updateNotice, setUpdateNotice] = useState<UpdateNotice | null>(null)
   // A line waits while Buildy's voice is still loading: he's getting ready to speak.
   const [voicePreparing, setVoicePreparing] = useState(false)
   const mascotWrapRef = useRef<HTMLDivElement | null>(null)
@@ -121,7 +123,9 @@ export function CompanionApp(): React.ReactElement {
     // a late reply must never wipe an analysis or badge that arrived meanwhile.
     void window.mybuildy.getWatchStatus().then(({ status }) => setWatchStatus(status))
     void window.mybuildy.getVoiceFallback().then(setVoiceFallback)
+    void window.mybuildy.update.get().then(setUpdateNotice).catch(() => {})
     const unsubs = [
+      window.mybuildy.update.onNotice(setUpdateNotice),
       window.mybuildy.onVoiceFallback(setVoiceFallback),
       window.mybuildy.onVoicePreparing(setVoicePreparing),
       window.mybuildy.onWatchStatus(applyWatchStatus),
@@ -525,6 +529,27 @@ export function CompanionApp(): React.ReactElement {
         </div>
       )}
 
+      {/* A newer MyBuildy was found when the app opened: nothing happens until a click */}
+      {updateNotice && (() => {
+        const view = updateNoticeView(updateNotice)
+        return (
+          <div style={S.updateNotice} role="status" data-testid="update-notice">
+            <div style={S.voiceNoticeTitle}>{view.title}</div>
+            {view.notes && <div style={S.updateNotes}>{view.notes}</div>}
+            {view.status && <div style={S.voiceNoticeReason}>{view.status}</div>}
+            <div style={S.voiceNoticeButtons}>
+              {view.primary && (
+                <button
+                  style={S.voiceNoticeButton}
+                  onClick={() => (view.primary!.action === 'download' ? window.mybuildy.update.download() : window.mybuildy.update.install())}
+                >{view.primary.label}</button>
+              )}
+              <button style={S.voiceNoticeDismiss} onClick={() => { setUpdateNotice(null); window.mybuildy.update.dismiss() }}>Later</button>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Hide: how to bring him back, before he goes */}
       {hiding && <div style={S.hideNotice} role="alert">{robotHiddenMessage(window.mybuildy.platform)}</div>}
 
@@ -730,6 +755,24 @@ const S = {
     color: '#F2F2F7',
     fontSize: 12,
     lineHeight: 1.35,
+  },
+  updateNotice: {
+    marginTop: 6,
+    maxWidth: 310,
+    padding: '8px 12px',
+    borderRadius: 12,
+    background: 'rgba(28,28,30,0.95)',
+    border: '1px solid rgba(255,159,10,0.6)',
+    color: '#F2F2F7',
+    fontSize: 12,
+    lineHeight: 1.35,
+  },
+  updateNotes: {
+    marginTop: 3,
+    color: '#D1D1D6',
+    maxHeight: 110,
+    overflowY: 'auto' as const,
+    whiteSpace: 'pre-wrap' as const,
   },
   voiceNoticeTitle: {
     fontWeight: 700,
