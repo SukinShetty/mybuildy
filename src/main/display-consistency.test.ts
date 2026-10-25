@@ -140,3 +140,64 @@ describe('goal reached: the robot celebrates only a verified goal', () => {
     expect(prepareForDisplay(analysis({ verification: verified, goalAlignment: 'blocked', builderNote: 'Goal reached!' })).goalReached).toBeFalsy()
   })
 })
+
+describe('prepareForDisplay — never points at a prompt that is not there', () => {
+  it('rewrites "Paste the prompt below" when there is no prompt (hand-off)', () => {
+    const out = prepareForDisplay(analysis({
+      nextPrompt: '',
+      bestNextMove: 'Paste the prompt below into Claude Code and press Enter.',
+      needsHumanJudgment: true,
+      humanJudgmentReason: 'Photos or sharing next?',
+    }))
+    expect(out.bestNextMove).not.toMatch(/paste|below/i)
+    expect(out.bestNextMove).toMatch(/answer the question/i)
+  })
+
+  it('rewrites it without a hand-off too', () => {
+    const out = prepareForDisplay(analysis({ nextPrompt: '', bestNextMove: 'Paste the prompt below into Claude Code.' }))
+    expect(out.bestNextMove).not.toMatch(/prompt below/i)
+  })
+
+  it('leaves it alone when the prompt is there', () => {
+    const out = prepareForDisplay(analysis({ nextPrompt: 'Add the save button.', bestNextMove: 'Paste the prompt below into Claude Code.' }))
+    expect(out.bestNextMove).toBe('Paste the prompt below into Claude Code.')
+  })
+
+  it('a grader hand-off keeps the prompt on screen next to the decision card', () => {
+    const base = analysis({ nextPrompt: 'Add photo upload to the recipe form.', bestNextMove: 'Paste the prompt below into Claude Code.' })
+    const out = prepareForDisplay({ ...base, ...buildQualityPatch(base, { valid: false, humanDirected: true, userQuestion: 'Photos or sharing next?' }) })
+    expect(out.needsHumanJudgment).toBe(true)
+    expect(out.nextPrompt).toBe('Add photo upload to the recipe form.')
+    expect(out.bestNextMove).toBe('Paste the prompt below into Claude Code.')
+  })
+})
+
+describe('prepareForDisplay — ordinary paste instructions are kept when there is no prompt', () => {
+  it.each([
+    'Copy the preview URL and paste it into your browser.',
+    'Paste your Supabase URL into the .env file, then restart the dev server.',
+    'Copy the error message and paste it into a search engine if it keeps happening.',
+    'Paste the API key into Settings, then click Save.',
+    'Open the link Claude Code printed and paste it into Chrome.',
+  ])('keeps: %s', (line) => {
+    for (const needsHumanJudgment of [false, true]) {
+      const out = prepareForDisplay(analysis({ nextPrompt: '', bestNextMove: line, needsHumanJudgment }))
+      expect(out.bestNextMove).toBe(line)
+    }
+  })
+
+  it.each([
+    'Paste the prompt below into Claude Code.',
+    'Paste the prompt into Claude Code and press Enter.',
+    'Copy the suggested prompt and send it to the agent.',
+    'Paste this into Claude Code.',
+    'Paste it into the terminal where Claude Code is running.',
+    'Use the text below to tell Claude what to do next.',
+  ])('rewrites (no prompt to point at): %s', (line) => {
+    const out = prepareForDisplay(analysis({ nextPrompt: '', bestNextMove: line }))
+    expect(out.bestNextMove).not.toBe(line)
+    // …but with a prompt on screen, the same line stays.
+    expect(prepareForDisplay(analysis({ nextPrompt: 'Add the save button.', bestNextMove: line })).bestNextMove).toBe(line)
+  })
+})
+
