@@ -3,14 +3,25 @@
 #   python kws.py train TRAIN_DIR MODEL_OUT.json
 #   python kws.py eval SET_DIR MODEL.json OUT_PREFIX [shard/n]   (eval set: held-out voices + sentences)
 import json, os, sys, zlib, numpy as np
-from openwakeword.utils import AudioFeatures
-F = AudioFeatures(ncpu=1)
 SR = 16000
+FE = os.environ.get('KWS_FE', 'gse')  # gse: our log-mel + Google speech_embedding (Apache-2.0) re-exported to ONNX; oww: old openWakeWord files (reproduction only)
+if FE == 'oww':
+    from openwakeword.utils import AudioFeatures
+    F = AudioFeatures(ncpu=1)
+else:
+    import onnxruntime as ort
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'wake-model'))
+    from logmel import logmel
+    _so = ort.SessionOptions(); _so.intra_op_num_threads = 1; _so.inter_op_num_threads = 1
+    G = ort.InferenceSession(os.environ.get('GSE_ONNX', '/workspace/evals/gse_embedding.onnx'), _so, providers=['CPUExecutionProvider'])
 rms = lambda x: float(np.sqrt(np.mean(x ** 2))) if len(x) else 0.0
 
 def emb(x):
     """embedding frames for audio x (int16 range); frame k sees audio up to ~ (k*8+76)*10 ms"""
-    return F._get_embeddings((np.clip(x, -1, 1) * 32767).astype(np.int16))
+    if FE == 'oww': return F._get_embeddings((np.clip(x, -1, 1) * 32767).astype(np.int16))
+    m = logmel(np.clip(x, -1, 1).astype(np.float32))
+    if len(m) < 76: return np.zeros((0, 96), np.float32)
+    return G.run(None, {'logmel': m[None, :, :, None]})[0][0, :, 0, :]
 
 def speech_bounds(x):
     a = np.abs(x); thr = 0.05 * a.max(); idx = np.where(a > thr)[0]
@@ -48,7 +59,7 @@ def train(tdir, outp):
     rng = np.random.default_rng(1)
     for n, m in enumerate(man):
         x = load(m); x = x / (np.abs(x).max() or 1) * 0.5; split = 'va' if m['voice'] in val_voices else 'tr'
-        reps = (6 if '-IN-' in m['voice'] or 'mINm' in m['voice'] else 3) if m['kind'] == 'pos' else 1
+        reps = (6 if '-IN-' in m['voice'] or 'mINm' in m['voice'] or m['voice'].endswith('_IN') else 3) if m['kind'] == 'pos' else 1
         for r in range(reps):
             lead = np.zeros(int(SR * rng.uniform(0.3, 1.2)), np.float32)
             if rng.random() < 0.5: g = gens[rng.integers(len(gens))]; lead = np.concatenate([g / (np.abs(g).max() or 1) * 0.5, np.zeros(int(SR * rng.uniform(0.05, 0.4)), np.float32)])
