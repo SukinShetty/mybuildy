@@ -111,7 +111,9 @@ export class WakeListener {
   private windowId = 0
   private windowDeadline = 0
   private windowTimer: unknown = null
-  private transcribing = false
+  /** Request window whose speech is being transcribed (null = none). Per window, so a slow
+   *  transcription from an expired window never blocks the next window's request. */
+  private transcribingWindow: number | null = null
   private restarts = 0
   private restartTimer: unknown = null
   private spotQueue: Float32Array[] = []
@@ -154,7 +156,7 @@ export class WakeListener {
     this.cancelRestart()
     this.closeWindow()
     this.closeMic()
-    this.transcribing = false
+    this.transcribingWindow = null
     this.setPhase('off')
   }
 
@@ -174,7 +176,7 @@ export class WakeListener {
     if (session !== this.session || !this.wanted) { mic.close(); return }
     this.mic = mic
     this.spotQueue = []; this.spotQueued = 0; this.spotReset = true
-    this.transcribing = false
+    this.transcribingWindow = null
     this.segmenter = new SpeechSegmenter((segment) => { void this.onSegment(segment, session) })
     mic.onSamples((samples) => {
       if (session !== this.session) return
@@ -285,9 +287,9 @@ export class WakeListener {
 
   /** A stretch of speech ended. Only used while a request window is open. */
   private async onSegment(segment: Float32Array, session: number): Promise<void> {
-    if (this.phase !== 'heard' || this.transcribing) return
+    if (this.phase !== 'heard' || this.transcribingWindow === this.windowId) return
     const id = this.windowId
-    this.transcribing = true
+    this.transcribingWindow = id
     let result: { success: boolean; text: string; error?: string }
     try {
       result = await this.deps.transcribe(segment)
@@ -295,7 +297,7 @@ export class WakeListener {
       console.warn('[Wake] transcription failed:', String(error).slice(0, 120))
       result = { success: false, text: '' }
     } finally {
-      if (session === this.session) this.transcribing = false
+      if (this.transcribingWindow === id) this.transcribingWindow = null
     }
     if (session !== this.session) return
     // Stale: the window ended (timer) or its deadline passed (timer late) while transcribing.
