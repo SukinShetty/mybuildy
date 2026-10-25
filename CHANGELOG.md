@@ -8,12 +8,12 @@ All notable changes to MyBuildy are documented here. The format follows
 
 ### Added
 
-- **"MyBuildy" wake word** (off by default; Settings → Voice → *Listen for "MyBuildy"*). Say "MyBuildy, give me the prompt" for the next prompt, or "MyBuildy, …" with any question. Listening runs only while it's on, MyBuildy is watching and the robot is on screen, with a listening dot on the robot's bar. Everything is checked on this computer by a small bundled listening model; nothing is sent before the name is heard. Recovers by itself when the microphone is unplugged, switched or the computer sleeps; a blocked microphone explains where to allow it (Windows and Mac).
+- **"Hey Buildy" wake word (experimental)** (off by default; Settings → Voice → *Wake word (experimental): say "Hey Buildy"*). Say "Hey Buildy, give me the prompt" for the next prompt, or "Hey Buildy, …" with any question. A small keyword model (Google's Apache-2.0 speech embedding plus our own classifier, about 2.6 MB) listens on this computer; nothing is sent before the name is heard, and if no request follows within a few seconds it quietly goes back to listening. Pauses while the computer sleeps or is locked; recovers when the microphone is unplugged or switched; a blocked microphone explains where to allow it (Windows and Mac). Works best in a quiet room; the mic button is always available. Licences: THIRD_PARTY_NOTICES.md (shipped with the app).
 - **The mic button is always shown.** Spoken questions are turned into text on this computer, no ElevenLabs key needed. If that isn't possible and no key is saved, the button explains how to get voice working.
 
 ### Changed
 
-- Installers are about 64 MB larger (the bundled listening model). `npm run fetch:voice` now also downloads it (pinned revision, checksums verified).
+- Installers are about 67 MB larger (the bundled listening model, about 64 MB, and the wake word model, about 2.6 MB). `npm run fetch:voice` now also downloads it (pinned revision, checksums verified).
 
 ## [0.1.0] — 2026-09-23
 
