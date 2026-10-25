@@ -215,3 +215,31 @@ describe('no install ID (real electron-updater)', () => {
     expect((MacUpdater.prototype as any).getUpdateInfoAndProvider).toBe((NsisUpdater.prototype as any).getUpdateInfoAndProvider)
   })
 })
+
+describe('disabled runs never construct the updater', () => {
+  it('does not call the updater getter when the check is disabled (dev / Linux / e2e)', async () => {
+    const getUpdater = vi.fn(() => { throw new Error('App version is not a valid semver version: "0.0"') })
+    const check = createUpdateCheck({ updater: getUpdater, currentVersion: '0.0', enabled: false, notify: () => {}, log: () => {} })
+    await check.checkOnce()
+    await check.download()
+    check.install()
+    expect(check.current()).toBeNull()
+    expect(getUpdater).not.toHaveBeenCalled()
+  })
+
+  it('calls the getter once when enabled and uses that updater', async () => {
+    const updater = fakeUpdater()
+    const getUpdater = vi.fn(() => updater)
+    const check = createUpdateCheck({ updater: getUpdater, currentVersion: '0.1.0', enabled: true, notify: () => {}, log: () => {} })
+    await check.checkOnce()
+    expect(getUpdater).toHaveBeenCalledTimes(1)
+    expect(updater.checkForUpdates).toHaveBeenCalledTimes(1)
+  })
+})
+
+it('index.ts hands over the real autoUpdater lazily (reading it constructs it; on Linux e2e runs that throws "0.0")', () => {
+  const src = readFileSync(join(__dirname, 'index.ts'), 'utf8')
+  // Every use of the autoUpdater export must be inside the getter, never read at module load.
+  const uses = src.split('\n').filter((l) => /\bautoUpdater\b/.test(l) && !/^\s*(\/\/|import )/.test(l))
+  expect(uses).toEqual(['  updater: () => autoUpdater,'])
+})

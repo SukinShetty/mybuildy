@@ -453,7 +453,8 @@ app.whenReady().then(async () => {
 // downloaded or installed without a click.
 let quittingForUpdate = false
 const updateCheck = createUpdateCheck({
-  updater: autoUpdater,
+  // A getter: reading autoUpdater constructs it, which must not happen when disabled.
+  updater: () => autoUpdater,
   currentVersion: app.getVersion(),
   enabled: updateCheckEnabled({ isPackaged: app.isPackaged, platform: process.platform, env: process.env }),
   notify: (notice) => {
