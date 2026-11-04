@@ -1011,7 +1011,10 @@ const styles = {
     display: 'flex',
     flexDirection: 'column' as const,
     gap: 3,
-    maxHeight: 320,
+    // Capped by the window height too: in a small window a 320px inner list
+    // filled most of the page, so the wheel scrolled the list and never the
+    // page, and the sections below it looked cut off.
+    maxHeight: 'min(320px, 35vh)',
     overflowY: 'auto' as const,
   },
   groupLabel: {
