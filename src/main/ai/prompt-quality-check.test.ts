@@ -79,7 +79,7 @@ describe('checkPromptQuality — human-directed criterion (Phase 3B)', () => {
 })
 
 describe('buildQualityPatch — converts human-directed prompts to a hand-off', () => {
-  it('drops the prompt and becomes a hand-off, IGNORING any improvedPrompt', () => {
+  it('KEEPS the prompt on screen and adds the hand-off, IGNORING any improvedPrompt', () => {
     const analysis = makeAnalysis('Are you building a planner or a checklist?')
     const result: PromptQualityResult = {
       valid: false,
@@ -89,8 +89,10 @@ describe('buildQualityPatch — converts human-directed prompts to a hand-off', 
     }
     const patch = buildQualityPatch(analysis, result)
     expect(patch).not.toBeNull()
-    expect(patch!.nextPrompt).toBe('')
-    expect(patch!.expectedOutcome).toBe('')
+    // Deferring the decision must leave the prompt usable: never blank it.
+    expect('nextPrompt' in patch!).toBe(false)
+    expect('expectedOutcome' in patch!).toBe(false)
+    expect({ ...analysis, ...patch }.nextPrompt).toBe('Are you building a planner or a checklist?')
     expect(patch!.needsHumanJudgment).toBe(true)
     expect(patch!.humanJudgmentReason).toBeTruthy()
   })
@@ -126,9 +128,9 @@ describe('buildQualityPatch — converts human-directed prompts to a hand-off', 
 })
 
 describe('patchDropsPrompt — detects patches that empty the prompt', () => {
-  it('is true for the hand-off drop and the ordinary blank path', () => {
+  it('is true for the ordinary blank path, false for a hand-off (prompt kept)', () => {
     const analysis = makeAnalysis('Are you building a planner or a checklist?')
-    expect(patchDropsPrompt(buildQualityPatch(analysis, { valid: false, humanDirected: true }))).toBe(true)
+    expect(patchDropsPrompt(buildQualityPatch(analysis, { valid: false, humanDirected: true }))).toBe(false)
     expect(patchDropsPrompt(buildQualityPatch(analysis, { valid: false, reason: 'Too generic.' }))).toBe(true)
   })
 
@@ -147,13 +149,13 @@ describe('dropped prompt → pending verifier outcome removed (stale-outcome fix
   // outcome BEFORE grading; when the grade drops the prompt, the recorded
   // outcome must be removed so the next cycle never verifies a prompt that was
   // never shown or sent. Uses the verifier's real in-memory API.
-  it('grader drops the prompt (hand-off) → no pending outcome remains', () => {
+  it('grader blanks the prompt (no improvement) → no pending outcome remains', () => {
     setVerifierProject('quality-drop-test')
-    const analysis = makeAnalysis('Are you building a planner or a checklist?')
+    const analysis = makeAnalysis('Continue building.')
     const recorded = recordPendingOutcome(analysis.nextPrompt, analysis.expectedOutcome || '')
     expect(getMostRecentPending()).not.toBeNull()
 
-    const patch = buildQualityPatch(analysis, { valid: false, humanDirected: true })
+    const patch = buildQualityPatch(analysis, { valid: false, reason: 'Too generic.' })
     if (patchDropsPrompt(patch)) removePendingOutcome(recorded?.id ?? null)
 
     expect(getMostRecentPending()).toBeNull()
