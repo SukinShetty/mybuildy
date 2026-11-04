@@ -49,6 +49,19 @@ const HUMAN_QUESTION_PHRASES = [
 ]
 
 /**
+ * "Could you add a save button?" is an instruction to the coding agent phrased
+ * politely, not a question for the human: a sentence that opens with
+ * "(please) can/could/would/will you" followed by a doing-verb. Asking for a
+ * choice, preference or confirmation still counts as a question for the human.
+ */
+const POLITE_REQUEST = /^(please\s+)?(can|could|would|will)\s+you\s+(please\s+)?\w+/
+const ASKS_THE_HUMAN = /\b(prefer|like|want|rather|choose|decide|think|confirm|clarify|tell me|let me know|which|or)\b|\byour\b/
+
+function isPoliteAgentRequest(sentence: string): boolean {
+  return POLITE_REQUEST.test(sentence) && !ASKS_THE_HUMAN.test(sentence)
+}
+
+/**
  * Heuristic: does this prompt contain a question or request directed at the
  * human user (rather than an instruction for the coding agent)?
  *
@@ -77,6 +90,7 @@ export function containsHumanDirectedQuestion(prompt: string): boolean {
   const sentences = text.match(/[^.!?]+[.!?]?/g) || []
   return sentences.some((sentence) => {
     const trimmed = sentence.trim().replace(/["')\]]+$/, '')
+    if (isPoliteAgentRequest(trimmed)) return false
     return trimmed.endsWith('?') && /\b(you|your|yours)\b/.test(trimmed)
   })
 }
