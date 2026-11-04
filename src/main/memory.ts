@@ -149,6 +149,7 @@ export async function loadNonSecretSettings(): Promise<NonSecretSettings> {
       buildyVoice: isBuildyVoice(raw.buildyVoice) ? raw.buildyVoice : d.buildyVoice,
       hourlyCallCap,
       captureNoticeAccepted: raw.captureNoticeAccepted === true,
+      wakeWordEnabled: raw.wakeWordEnabled === true,
     }
   } catch {
     return d
@@ -210,6 +211,7 @@ export async function saveNonSecretSettings(s: NonSecretSettings): Promise<void>
     buildyVoice: s.buildyVoice,
     hourlyCallCap: s.hourlyCallCap,
     captureNoticeAccepted: s.captureNoticeAccepted || onDisk.captureNoticeAccepted,
+    wakeWordEnabled: s.wakeWordEnabled === true,
   }
   await fs.writeFile(settingsFilePath, JSON.stringify(clean, null, 2), 'utf-8')
 }

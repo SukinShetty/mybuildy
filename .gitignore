@@ -37,3 +37,6 @@ live/last-results.md
 
 # Buildy's voice model (scripts/fetch-kokoro-model.mjs; bundled into the installer)
 resources/kokoro/
+resources/whisper/
+__pycache__/
+*.pyc

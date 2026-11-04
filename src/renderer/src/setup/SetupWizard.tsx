@@ -39,6 +39,7 @@ function nonSecretFrom(s: RedactedSettings, overrides: Partial<NonSecretSettings
     buildyVoice: s.buildyVoice,
     hourlyCallCap: s.hourlyCallCap,
     captureNoticeAccepted: s.captureNoticeAccepted,
+    wakeWordEnabled: s.wakeWordEnabled === true, // main keeps the saved value; setup never turns it on
     ...overrides,
   }
 }
