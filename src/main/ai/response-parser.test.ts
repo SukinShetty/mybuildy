@@ -232,3 +232,24 @@ FIRST_PROMPT: Set up a new Next.js + Tailwind app called FreelanceCRM and build 
     expect(tryExtractProjectData('Tell me more about who this is for?')).toBeNull()
   })
 })
+
+describe('containsHumanDirectedQuestion — polite instructions to the agent stay prompts', () => {
+  it.each([
+    'Could you add a photo upload button to the recipe form?',
+    'Can you fix the failing login test and run the suite again?',
+    'Please could you rename the Save button to Save recipe?',
+    'Would you add input validation to the signup form?',
+  ])('does not flag %s', (prompt) => {
+    expect(containsHumanDirectedQuestion(prompt)).toBe(false)
+  })
+
+  it.each([
+    'Could you tell me which page should load first?',
+    'Would you prefer photos or sharing next?',
+    'Can you confirm the database name?',
+    'Could you check your API key settings?',
+  ])('still flags a question for the human: %s', (prompt) => {
+    expect(containsHumanDirectedQuestion(prompt)).toBe(true)
+  })
+})
+

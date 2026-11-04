@@ -8,7 +8,7 @@
 //   - All speech and analysis stop on quit
 //   - Tray provides Open/Quit shortcuts but the app does NOT hide to tray by default
 
-import { app, BrowserWindow, Tray, Menu, nativeImage, shell, globalShortcut, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, Tray, Menu, nativeImage, shell, globalShortcut, dialog, ipcMain, powerMonitor } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { join } from 'path'
 import { pathToFileURL } from 'node:url'
@@ -21,8 +21,10 @@ import { initProjects } from './projects'
 import { isProjectsRecoveryError, readProjectsBackup, restoreProjectsBackup, preserveDamagedProjectsFile } from './projects-core'
 import { createVoicePlayerWindow, destroyVoicePlayer, stopVoice } from './voice-player'
 import { startKokoro, stopKokoro } from './kokoro-engine'
+import { startListenEngine, stopListenEngine } from './listen-engine'
+import { PowerPause } from './power-pause'
 import { migratePlaintextSecrets } from './secure-store'
-import { settingsFilePath, loadRedactedSettings, loadGoal } from './memory'
+import { settingsFilePath, loadRedactedSettings, loadGoal, loadNonSecretSettings } from './memory'
 import { isModelConfigured } from '../renderer/src/types'
 import { debugLog } from './debug-log'
 import { isSafeExternalUrl, isAllowedAppNavigation, isBlockedDevShortcut } from './navigation-guard'
@@ -142,7 +144,7 @@ const cleanUpForQuit = createShutdown({
     companionWindow = null
   },
   destroyGuidance: () => { destroyGuidanceWindow(); guidanceWindow = null },
-  destroyVoicePlayer: () => { destroyVoicePlayer(); stopKokoro(); voicePlayerWindow = null },
+  destroyVoicePlayer: () => { destroyVoicePlayer(); stopKokoro(); stopListenEngine(); voicePlayerWindow = null },
   destroyMainWindow: () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy()
     mainWindow = null
@@ -392,6 +394,15 @@ app.whenReady().then(async () => {
 
   // Buildy's own voice: load the bundled model now and keep it loaded.
   startKokoro()
+  // On-device listening: loaded at startup only if the user turned the wake word on.
+  void loadNonSecretSettings().then((s) => { if (s.wakeWordEnabled) void startListenEngine() }).catch(() => {})
+  // The wake word pauses while the computer sleeps or the screen is locked, and resumes after.
+  // Sleep and lock are tracked separately (power-pause.ts): waking onto a locked screen stays paused.
+  let startLocked = false
+  try { startLocked = powerMonitor.getSystemIdleState(1) === 'locked' } catch { /* unsupported: assume unlocked */ }
+  new PowerPause((paused) => {
+    if (companionWindow && !companionWindow.isDestroyed()) companionWindow.webContents.send(IPC.LISTEN_PAUSED, paused)
+  }, startLocked).attach(powerMonitor)
 
   // e2e-only fixture hooks (no-op unless MYBUILDY_E2E=1 and not packaged).
   registerE2eTestHooks(() => companionWindow)
