@@ -16,10 +16,16 @@
 const UPLOADING = '.uploading'
 const OLD = '.old'
 
-/** SHA256SUMS.txt goes last, so its checksums never describe files not yet replaced. */
+/**
+ * Installers and zips first; then the update feeds (latest*.yml), so an app
+ * checking for updates never sees a feed pointing at a file not yet replaced;
+ * SHA256SUMS.txt last, so its checksums never describe files not yet replaced.
+ */
 export function uploadOrder(names) {
+  const isFeed = (n) => /^latest(-mac)?\.yml$/.test(n)
   const sums = names.filter((n) => n === 'SHA256SUMS.txt')
-  return [...names.filter((n) => n !== 'SHA256SUMS.txt').sort(), ...sums]
+  const feeds = names.filter(isFeed).sort()
+  return [...names.filter((n) => n !== 'SHA256SUMS.txt' && !isFeed(n)).sort(), ...feeds, ...sums]
 }
 
 /**

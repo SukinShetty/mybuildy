@@ -343,6 +343,10 @@ export function dataDestinationNote(input: { provider: ProviderType; baseUrl: st
   return `Screenshots and prompts are sent to ${CLOUD_PROVIDER_NAMES[input.provider] ?? 'your AI provider'}. ${keys}`
 }
 
+/** Settings → About: the one request MyBuildy itself makes (update-check.ts). */
+export const UPDATE_CHECK_NOTE =
+  'When MyBuildy opens, it asks GitHub once whether a newer version is published. GitHub sees your IP address, as with any web request; no account, install ID or anything about your projects is sent. Nothing downloads until you click Update.'
+
 // ─── "Hey Buildy" wake word (Settings > Voice) ─────────────────────────────────
 // Off unless the user turns it on. Plain words, no brand or model names.
 export const WAKE_WORD_EXPLANATION =
@@ -657,6 +661,14 @@ export interface ExtractedProjectData {
 // ─── IPC Channel Names ────────────────────────────────────────────────────────
 // Centralized so typos don't cause silent failures.
 
+// ─── Update check (main/update-check.ts) ─────────────────────────────────────
+// One check against GitHub Releases when the app opens. The robot shows this
+// notice; nothing downloads or installs until the user clicks.
+export type UpdateNotice =
+  | { phase: 'available'; version: string; notes: string }
+  | { phase: 'downloading'; version: string; notes: string; percent: number }
+  | { phase: 'ready'; version: string; notes: string }
+
 export const IPC = {
   LIST_WINDOWS:        'mybuildy:list-windows',
   ANALYZE_NOW:         'mybuildy:analyze-now',         // renderer → main (one analysis of the watched window, now)
@@ -745,7 +757,12 @@ export const IPC = {
   PROJECTS_SWITCHED:   'projects:switched',        // main → all windows (active project changed: drop per-project UI state)
   PROJECTS_SWITCH:     'projects:switch',          // renderer → main (set active) → ProjectRecord
   ROBOT_HIDE:          'robot:hide',               // robot → main (Hide: robot + guidance go away, watching continues)
-  APP_QUIT:            'app:quit',                 // robot / main window → main (confirmed Quit: shut everything down)
+  APP_QUIT:            'app:quit',
+  UPDATE_NOTICE:       'update:notice',            // main → robot (UpdateNotice, or null = nothing to show)
+  UPDATE_NOTICE_GET:   'update:notice-get',        // robot → main (the current UpdateNotice or null)
+  UPDATE_DOWNLOAD:     'update:download',          // robot → main (Update clicked: download it)
+  UPDATE_INSTALL:      'update:install',           // robot → main (Restart to update clicked)
+  UPDATE_DISMISS:      'update:dismiss',           // robot → main (Later clicked)                 // robot / main window → main (confirmed Quit: shut everything down)
   ROBOT_SCALE_GET:     'robot:scale-get',          // renderer → main → number (robot size)
   ROBOT_SCALE_SET:     'robot:scale-set',          // main window / robot → main (Settings: Robot size)
   ROBOT_ZOOM:          'robot:zoom',               // robot → main ('in' | 'out': Ctrl/Cmd + scroll wheel) → new scale

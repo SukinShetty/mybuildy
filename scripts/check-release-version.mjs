@@ -48,7 +48,7 @@ for (const file of asars) {
 }
 
 // Every installer file in dist/ must be EXACTLY one of this version's names.
-const artifacts = existsSync(dist) ? readdirSync(dist).filter((f) => /\.(exe|dmg)$/i.test(f) && !/__uninstaller/i.test(f)) : []
+const artifacts = existsSync(dist) ? readdirSync(dist).filter((f) => /\.(exe|dmg|zip)$/i.test(f) && !/__uninstaller/i.test(f)) : []
 for (const a of artifacts) seen.push(`artifact ${a}`)
 problems.push(...artifactProblems(tagVersion, artifacts))
 

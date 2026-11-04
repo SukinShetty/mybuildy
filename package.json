@@ -25,6 +25,7 @@
     "eval:wake-word": "node --experimental-strip-types scripts/eval-wake-word.mjs"
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "nemp-mcp-server": "^0.2.2",
     "onnxruntime-node": "1.21.0",
     "zod": "^3.25.76",
@@ -104,8 +105,16 @@
             "arm64",
             "x64"
           ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
         }
       ],
+      "artifactName": "MyBuildy-${version}-${arch}-mac.${ext}",
       "icon": "build/icon.icns",
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,
@@ -125,7 +134,14 @@
       "artifactName": "MyBuildy-${version}-${arch}.${ext}",
       "sign": true
     },
-    "publish": null,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "SukinShetty",
+        "repo": "mybuildy",
+        "releaseType": "release"
+      }
+    ],
     "asarUnpack": [
       "node_modules/onnxruntime-node/**"
     ]

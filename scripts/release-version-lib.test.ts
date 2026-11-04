@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 // @ts-expect-error — plain .mjs module shared with the release script (no type declarations)
-import { artifactProblems, expectedArtifactNames } from './release-version-lib.mjs'
+import { artifactProblems, expectedArtifactNames, releaseFileNames } from './release-version-lib.mjs'
 
 describe('release check: artifact names must match the version exactly', () => {
   it('lists the exact names for a version', () => {
@@ -8,7 +8,17 @@ describe('release check: artifact names must match the version exactly', () => {
       'MyBuildy-Setup-0.1.0.exe',
       'MyBuildy-0.1.0-arm64.dmg',
       'MyBuildy-0.1.0-x64.dmg',
+      'MyBuildy-0.1.0-arm64-mac.zip',
+      'MyBuildy-0.1.0-x64-mac.zip',
     ])
+  })
+
+  it('the release also carries the update feeds and blockmaps the in-app update check reads', () => {
+    expect(releaseFileNames('0.1.1')).toEqual(expect.arrayContaining([
+      'MyBuildy-Setup-0.1.1.exe', 'latest.yml', 'MyBuildy-Setup-0.1.1.exe.blockmap',
+      'latest-mac.yml', 'MyBuildy-0.1.1-arm64-mac.zip', 'MyBuildy-0.1.1-x64-mac.zip',
+      'MyBuildy-0.1.1-arm64-mac.zip.blockmap', 'MyBuildy-0.1.1-x64-mac.zip.blockmap',
+    ]))
   })
 
   it('accepts the exact names', () => {
