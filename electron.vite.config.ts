@@ -27,7 +27,13 @@ function devCspPlugin(): Plugin {
 // only the parts it uses ship, and `sharp` (an image library @huggingface/
 // transformers imports but speech never calls) is replaced by an empty stub,
 // so no image binaries are needed. onnxruntime-node stays external (native).
-const BUNDLED_VOICE_DEPS = ['kokoro-js', '@huggingface/transformers', 'phonemizer']
+// `phonemizer` (eSpeak NG, GPL-3.0, which kokoro-js imports) is replaced by
+// a stub that throws: text → phonemes is kokoro-g2p.ts (misaki + rules).
+const BUNDLED_VOICE_DEPS = ['kokoro-js', '@huggingface/transformers', '@titan-design/speech-g2p', 'phonemize', 'compromise']
+
+// misaki's pronunciation dictionaries and spaCy's tokenizer rules, read by
+// @titan-design/speech-g2p from ../data/ next to its code (out/data/).
+const G2P_DATA = ['us_gold.json', 'us_silver.json', 'spacy-en-tokenizer.json']
 
 // kokoro-js reads a voice from ../voices/<id>.bin next to its code: copy
 // Buildy's two (Bella and Puck, ~0.5 MB each; the other voices don't ship).
@@ -41,6 +47,10 @@ function copyBuildyVoicePlugin(): Plugin {
       for (const voice of BUILDY_KOKORO_VOICES) {
         copyFileSync(resolve(__dirname, `node_modules/kokoro-js/voices/${voice}.bin`), resolve(__dirname, `out/voices/${voice}.bin`))
       }
+      mkdirSync(resolve(__dirname, 'out/data'), { recursive: true })
+      for (const file of G2P_DATA) {
+        copyFileSync(resolve(__dirname, `node_modules/@titan-design/speech-g2p/data/${file}`), resolve(__dirname, `out/data/${file}`))
+      }
     }
   }
 }
@@ -49,7 +59,10 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin({ exclude: BUNDLED_VOICE_DEPS }), copyBuildyVoicePlugin()],
     resolve: {
-      alias: { sharp: resolve(__dirname, 'src/main/sharp-stub.ts') }
+      alias: {
+        sharp: resolve(__dirname, 'src/main/sharp-stub.ts'),
+        phonemizer: resolve(__dirname, 'src/main/phonemizer-stub.ts')
+      }
     },
     build: {
       rollupOptions: {

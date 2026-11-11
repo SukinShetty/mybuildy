@@ -19,7 +19,7 @@ import { useRefreshWhileOpen } from '../components/useRefreshWhileOpen'
 import { BAR_BACKGROUND_CSS, ICON_COLOR, ICON_HOVER_COLOR, ICON_HOVER_BACKGROUND_CSS } from './robot-theme'
 import type { AnalysisResult, WatchStatus, VoiceFallback, UpdateNotice } from '../types'
 import { updateNoticeView } from './update-notice'
-import { isModelConfigured, CAPTURE_NOTICE_MESSAGE } from '../types'
+import { isModelConfigured, CAPTURE_NOTICE_MESSAGE, WAKE_WORD_AVAILABLE, WAKE_WORD_COMING_SOON_HINT } from '../types'
 import type { CompanionState, MicState } from '../store/useCompanionStore'
 
 interface WindowItem { id: string; name: string; thumbnailBase64: string }
@@ -363,7 +363,9 @@ export function CompanionApp(): React.ReactElement {
   }, [])
 
   // ─── "Hey Buildy" wake word ──────────────────────────────────────────
-  // Listening runs only while ALL are true: the user turned it on (Settings >
+  // At launch WAKE_WORD_AVAILABLE is false, so shouldListenForWakeWord stays
+  // false even if an earlier test build saved the setting on. Listening runs
+  // only while ALL are true: the flag is on, the user turned it on (Settings >
   // Voice), MyBuildy is watching, the one-time notice was accepted, the robot is
   // on screen, the listening model is here, and the mic button isn't recording.
 
@@ -512,6 +514,7 @@ export function CompanionApp(): React.ReactElement {
     : micState === 'transcribing' ? 'transcribing...'
     : micState === 'answering' ? 'thinking...'
     : micError ? micError
+    : !WAKE_WORD_AVAILABLE ? null
     : listenIndicator === 'heard' ? 'Yes? Ask your question...'
     : listenIndicator === 'error' && listenMessage ? listenMessage
     : null
@@ -706,6 +709,7 @@ function Btn({ icon, onClick, active, title }: { icon: string; onClick: () => vo
 // ─── Mic button (click to start, click to stop) ─────────────────────────────
 
 function listenIndicatorTitle(state: ListenIndicator, message: string | null): string {
+  if (!WAKE_WORD_AVAILABLE) return WAKE_WORD_COMING_SOON_HINT
   if (state === 'error') return message ?? 'Listening stopped.'
   if (state === 'heard') return 'Heard "Hey Buildy" — ask your question'
   if (state === 'working') return 'Working on what you asked'

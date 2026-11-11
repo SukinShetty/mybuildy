@@ -1,7 +1,7 @@
 # How to ship an update
 
-Installed MyBuildy apps (Windows and Mac, from 0.1.1 on) check GitHub **once when
-they open**. If a newer **published** release exists, the robot shows
+Installed MyBuildy apps (Windows and Mac, every download since the Nov 4, 2026
+rebuild of 0.1.0, including the launch build) check GitHub **once when they open**. If a newer **published** release exists, the robot shows
 "New update available: MyBuildy x.y.z" with that release's notes, an **Update**
 button and **Later**. Update downloads; **Restart to update** installs. Nothing
 downloads or installs without a click. Offline or errors: nothing is shown
@@ -31,8 +31,10 @@ The app reads `latest.yml` (Windows) and `latest-mac.yml` (Mac) from the
 - **Rebuilding the same version in place does not trigger updates.** Moving
   the `v0.1.0` tag and re-running the release replaces the files, but installed
   0.1.0 apps compare versions, see 0.1.0 = 0.1.0 and stay quiet. Always bump.
-- **0.1.0 has no update check.** People on 0.1.0 must download 0.1.1 once from
-  mybuildy.com; from 0.1.1 on they are told about each new version.
+- **0.1.0 downloads from before Nov 4, 2026 have no update check.** People on
+  those must download the next version once from mybuildy.com. The 0.1.0
+  downloads from Nov 4 on (including the launch build) do check, so they are
+  told about 0.1.1 and every version after it.
 - **Drafts and pre-releases are invisible** to installed apps (no `allowPrerelease`).
 - **Mac** updates need the signed, notarized app inside the zip (the release job
   signs and notarizes; never publish an unsigned Mac build — Squirrel.Mac

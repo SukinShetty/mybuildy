@@ -8,9 +8,14 @@
 //   { type: 'speak', id, text, voice }            → { type: 'audio', id, wavBase64, ms } | { type: 'speak-failed', id, message }
 // Requests are handled one at a time, in order. Only Buildy's voices (Bella,
 // Puck) are accepted. testLoad (e2e dev runs only) simulates a slow or hung load.
+//
+// Text → phonemes is ours (kokoro-g2p.ts: misaki's dictionaries + rules), not
+// kokoro-js's generate(), which would call eSpeak NG (GPL-3.0, not shipped:
+// the `phonemizer` import is replaced by phonemizer-stub.ts at build time).
 
 import { env } from '@huggingface/transformers'
 import { KokoroTTS } from 'kokoro-js'
+import { textToPhonemes, warmUpG2p } from './kokoro-g2p'
 
 const MODEL = 'onnx-community/Kokoro-82M-v1.0-ONNX'
 
@@ -23,6 +28,13 @@ type FromMain =
 let tts: KokoroTTS | null = null
 let voices: Voice[] = []
 let chain: Promise<void> = Promise.resolve()
+
+/** Buildy's voice for one sentence: our phonemes → Kokoro's tokenizer → the model. */
+async function speak(text: string, voice: Voice) {
+  if (!tts) throw new Error('not loaded')
+  const { input_ids } = tts.tokenizer(textToPhonemes(text), { truncation: true })
+  return tts.generate_from_ids(input_ids, { voice })
+}
 
 function post(message: unknown): void {
   process.parentPort.postMessage(message)
@@ -61,7 +73,8 @@ async function handle(message: FromMain): Promise<void> {
       env.localModelPath = message.modelDir
       voices = message.voices
       tts = await KokoroTTS.from_pretrained(MODEL, { dtype: 'fp16', device: 'cpu' })
-      for (const voice of voices) await tts.generate('Hi.', { voice }) // warm up, so the first real line is fast
+      warmUpG2p() // load the pronunciation dictionaries now, not on the first line
+      for (const voice of voices) await speak('Hi.', voice) // warm up, so the first real line is fast
       post({ type: 'ready', loadMs: Date.now() - started })
     } catch (error) {
       post({ type: 'load-failed', message: String(error).slice(0, 300) })
@@ -74,7 +87,7 @@ async function handle(message: FromMain): Promise<void> {
   }
   try {
     const started = Date.now()
-    const audio = await tts.generate(message.text, { voice: message.voice })
+    const audio = await speak(message.text, message.voice)
     post({ type: 'audio', id: message.id, wavBase64: toWav(audio.audio, audio.sampling_rate).toString('base64'), ms: Date.now() - started })
   } catch (error) {
     post({ type: 'speak-failed', id: message.id, message: String(error).slice(0, 300) })

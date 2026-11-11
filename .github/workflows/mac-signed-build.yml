@@ -52,6 +52,11 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx electron-builder --mac dmg zip --arm64 --x64 --publish never
 
+      - name: Licence check (the packaged Mac apps)
+        run: |
+          node scripts/check-licences.mjs --out out --app dist/mac-arm64/MyBuildy.app/Contents/Resources
+          node scripts/check-licences.mjs --out out --app dist/mac/MyBuildy.app/Contents/Resources
+
       - name: Notarize and staple the DMGs; verify every signature
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
