@@ -8,7 +8,7 @@
 // switching re-points the whole memory layer. Editing the goal text keeps the
 // current project (and its memory) — only "New project" starts a fresh one.
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useAppStore } from '../store/useAppStore'
 import type { ProjectMemory } from '../types'
 import { ProjectManager } from '../components/ProjectManager'
@@ -38,6 +38,10 @@ export function GoalScreen(): React.ReactElement {
   const [managing, setManaging] = useState(false)
 
   const canSave = purpose.trim().length > 0
+  // Bumped whenever the project on screen changes (switch, new, manage). A goal
+  // save that finishes after that belongs to the project it was saved for, so
+  // its reply must not be shown on (or navigate away from) the new project.
+  const projectGeneration = useRef(0)
 
   const refreshProjects = useCallback(async (): Promise<void> => {
     try {
@@ -57,6 +61,7 @@ export function GoalScreen(): React.ReactElement {
   // After a switch/new-project the ACTIVE project's memory changed under us —
   // reload it and reset the form fields from its goal.
   function applyLoadedProject(pm: ProjectMemory): void {
+    projectGeneration.current++
     setProject(pm)
     setPurpose(pm.goal?.purpose ?? '')
     setAudience(pm.goal?.audience ?? '')
@@ -68,6 +73,7 @@ export function GoalScreen(): React.ReactElement {
   async function handleSwitchProject(id: string): Promise<void> {
     if (switching || !id || id === activeProject?.id) return
     setSwitching(true)
+    projectGeneration.current++
     try {
       await window.mybuildy.projects.switch(id)
       applyLoadedProject(await window.mybuildy.loadProject())
@@ -82,6 +88,7 @@ export function GoalScreen(): React.ReactElement {
   async function handleNewProject(): Promise<void> {
     if (switching) return
     setSwitching(true)
+    projectGeneration.current++
     try {
       await window.mybuildy.projects.create({})
       applyLoadedProject(await window.mybuildy.loadProject())
@@ -109,6 +116,7 @@ export function GoalScreen(): React.ReactElement {
   async function handleSave(): Promise<void> {
     if (!canSave || saving) return
     setSaving(true)
+    const savedFor = projectGeneration.current
     try {
       // "Edit goal" KEEPS this project's memory: goal.set only replaces the goal
       // on the active project — it never creates a project or wipes memory.
@@ -118,6 +126,12 @@ export function GoalScreen(): React.ReactElement {
         mostImportant: mostImportant.trim() || undefined,
         successCriteria: successCriteria.trim() || undefined,
       })
+      // Another project was opened while this saved: the goal is stored on the
+      // project it was written for; leave the project now on screen alone.
+      if (projectGeneration.current !== savedFor) {
+        setSaving(false)
+        return
+      }
       // Keep the in-memory project in sync (main process already persisted it)
       patchProject({ goal, goalPromptSeen: true })
       setCurrentScreen('guidance')
