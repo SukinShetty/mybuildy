@@ -51,6 +51,14 @@ test('app runs in the expected packaging mode with the overridden profile', asyn
   expect(fs.existsSync(path.join(mybuildy.profileDir, 'projects.json'))).toBe(true)
 })
 
+test('the running Electron runtime has the GHSA-jr5w-w6x2-84p9 TLS fix (>= 44.9.1)', async () => {
+  // The packaged run checks the runtime actually inside the installer, not just the lockfile.
+  const version = await mybuildy.app.evaluate(() => process.versions.electron)
+  const [major, minor, patch] = version.split('-')[0].split('.').map(Number)
+  expect(major).toBe(44)
+  expect(minor > 9 || (minor === 9 && patch >= 1)).toBe(true)
+})
+
 test('no renderer console errors in any window', async () => {
   // Small settle so late async renderer work (settings/memory loads) surfaces.
   await mybuildy.main.waitForTimeout(1500)

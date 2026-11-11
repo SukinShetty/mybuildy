@@ -43,10 +43,11 @@ import { executeSend, isSendInFlight, isWatchedWindowPresent } from './prompt-se
 import { SendAuthorizer, shouldRegisterOutcome, type SendContext } from './send-authorization'
 import { getActiveProject } from './projects'
 import { sendGuidanceSendState, showGuidanceWindow } from './guidance-window'
-import { recordProviderCall, getCallsThisHour, isAtHourlyCap } from './cost-guard'
+import { reserveProviderCall, getCallsThisHour, isAtHourlyCap, hourlyCapMessage } from './cost-guard'
 import { mapProviderError, isAuthOrBillingError } from './ai/provider-errors'
 import { chatCompletionLimits } from './ai/request-shape'
 import { hasVisionPass } from './vision-approvals'
+import { callTextCompletion } from './ai/text-completion'
 import { enqueueSpeech } from './voice-player'
 import { RecentTopics } from './semantic-dedup'
 import { isStaleSession, startContinuity, pollStrictContinuity, type ContinuityEvent, type LostReason } from './capture-guard'
@@ -646,6 +647,25 @@ async function answerQuestion(
   const stoppedSinceAsked = (): boolean => currentSession !== questionSession
 
   debugLog(`[AnalysisLoop] Question: "${question}"`)
+
+  // The same gates as watching, before anything is captured or sent:
+  // a chosen model (and key), a passed vision check when a screenshot would
+  // go with the question, and the hourly request limit.
+  const sayInstead = (answer: string): void => {
+    if (!companionWindow.isDestroyed()) companionWindow.webContents.send(IPC.COMPANION_ANSWER, { question, answer })
+  }
+  if (!settings.modelId.trim() || (KEYED_PROVIDERS.has(settings.provider) && !settings.apiKey)) {
+    sayInstead(CHOOSE_MODEL_MESSAGE)
+    return
+  }
+  if (watchedSourceId && !hasVisionPass(settings.provider, settings.modelId, settings.apiKey)) {
+    sayInstead(VISION_BLOCK_MESSAGE)
+    return
+  }
+  if (isAtHourlyCap(settings.hourlyCallCap)) {
+    sayInstead(hourlyCapMessage(settings.hourlyCallCap))
+    return
+  }
   notifyCompanionState(companionWindow, 'thinking')
 
   // Capture fresh screenshot if we have a watched window
@@ -661,15 +681,17 @@ async function answerQuestion(
   }
 
   if (stoppedSinceAsked()) return
-  const provider = getProvider(settings.provider)
   const systemPrompt = buildQuestionSystemPrompt(windowTitle, session)
   const userPrompt = buildQuestionUserPrompt(question, session)
 
   try {
-    // Build the messages for the provider
-    // We need to call the provider's raw API since analyzeScreen returns AnalysisResult JSON
-    // Use a text-only call via the brainstorm-style interface, but we want a single response
-    const raw = await callProviderForAnswer(provider, systemPrompt, userPrompt, screenshotBase64, settings)
+    // Cost guard: take the slot right before the request.
+    if (!reserveProviderCall(settings.hourlyCallCap)) {
+      sayInstead(hourlyCapMessage(settings.hourlyCallCap))
+      notifyCompanionState(companionWindow, 'idle')
+      return
+    }
+    const raw = await callProviderForAnswer(systemPrompt, userPrompt, screenshotBase64, settings)
     if (stoppedSinceAsked()) return // Stop pressed while answering: say nothing
     // The reply, plus any goal/prompt the user asked for as its own field.
     const { reply, suggestion } = parseQuestionReply(raw)
@@ -695,110 +717,25 @@ async function answerQuestion(
   notifyCompanionState(companionWindow, 'idle')
 }
 
+/**
+ * One answer from the user's provider and model. Uses the same request
+ * building as the rest of the app (ai/text-completion.ts), so the configured
+ * base URL (e.g. a custom endpoint ending in /v1) is used exactly once.
+ */
 async function callProviderForAnswer(
-  provider: any,
   systemPrompt: string,
   userPrompt: string,
   screenshotBase64: string | null,
   settings: AppSettings
 ): Promise<string> {
-  const providerType = settings.provider
-  let url: string
-  let headers: Record<string, string>
-  let body: any
-
-  if (providerType === 'anthropic') {
-    url = 'https://api.anthropic.com/v1/messages'
-    headers = {
-      'Content-Type': 'application/json',
-      'x-api-key': settings.apiKey,
-      'anthropic-version': '2023-06-01',
-    }
-    const userContent: any[] = []
-    if (screenshotBase64) {
-      userContent.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: screenshotBase64 } })
-    }
-    userContent.push({ type: 'text', text: userPrompt })
-    body = {
-      model: settings.modelId,
-      max_tokens: 800,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userContent }],
-    }
-  } else if (providerType === 'gemini') {
-    const modelId = settings.modelId
-    // Key in a header, never the URL.
-    url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`
-    headers = { 'Content-Type': 'application/json', 'x-goog-api-key': settings.apiKey }
-    const parts: any[] = []
-    if (screenshotBase64) {
-      parts.push({ inline_data: { mime_type: 'image/jpeg', data: screenshotBase64 } })
-    }
-    parts.push({ text: userPrompt })
-    body = {
-      system_instruction: { parts: [{ text: systemPrompt }] },
-      contents: [{ role: 'user', parts }],
-      generationConfig: { maxOutputTokens: 800 },
-    }
-  } else {
-    // OpenAI-compatible (openai, openrouter, ollama, lmstudio, custom)
-    let baseUrl = settings.baseUrl || 'https://api.openai.com'
-    if (providerType === 'openai') baseUrl = 'https://api.openai.com'
-    else if (providerType === 'openrouter') baseUrl = 'https://openrouter.ai/api'
-    else if (providerType === 'ollama') baseUrl = settings.baseUrl || 'http://localhost:11434'
-    else if (providerType === 'lmstudio') baseUrl = settings.baseUrl || 'http://localhost:1234'
-
-    url = `${baseUrl}/v1/chat/completions`
-    headers = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${settings.apiKey}`,
-    }
-    if (providerType === 'openrouter') {
-      headers['HTTP-Referer'] = 'https://github.com/SukinShetty/mybuildy'
-      headers['X-Title'] = 'MyBuildy'
-    }
-
-    const userContent: any[] = []
-    if (screenshotBase64) {
-      userContent.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${screenshotBase64}`, detail: 'high' } })
-    }
-    userContent.push({ type: 'text', text: userPrompt })
-
-    body = {
-      model: settings.modelId,
-      ...chatCompletionLimits(providerType, settings.modelId, 800),
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent },
-      ],
-    }
-  }
-
-  const isLocal = providerType === 'ollama' || providerType === 'lmstudio'
-  const response = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  }, isLocal)
-
-  if (!response.ok) {
-    throw await providerHttpError('Provider', response)
-  }
-
-  const json = await readJson<{
-    content?: Array<{ text?: string }>
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>
-    choices?: Array<{ message?: { content?: string } }>
-  }>(response, 'Provider')
-
-  // Extract text from response
-  if (providerType === 'anthropic') {
-    return json.content?.[0]?.text || 'No response.'
-  } else if (providerType === 'gemini') {
-    return json.candidates?.[0]?.content?.parts?.[0]?.text || 'No response.'
-  } else {
-    return json.choices?.[0]?.message?.content || 'No response.'
-  }
+  const text = await callTextCompletion({
+    system: systemPrompt,
+    user: userPrompt,
+    settings,
+    maxTokens: 800,
+    imageBase64: screenshotBase64,
+  })
+  return text || 'No response.'
 }
 
 // ─── Core cycle ──────────────────────────────────────────────────────────────
@@ -884,7 +821,11 @@ async function runOneAnalysisCycle(
     memoryContext,
   }
   let analysis: AnalysisResult
-  recordProviderCall() // cost guard: analysis call
+  // Cost guard: take the slot right before the request (a question may have used the last one meanwhile).
+  if (!reserveProviderCall(settings.hourlyCallCap)) {
+    pauseWithMessage(companionWindow, BUDGET_PAUSE_MESSAGE)
+    return
+  }
   try {
     analysis = await provider.analyzeScreen(capture, analysisProject, settings)
   } catch (error) {

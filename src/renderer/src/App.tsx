@@ -8,7 +8,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { isModelConfigured } from './types'
-import { useAppStore } from './store/useAppStore'
+import { useAppStore, type AppScreen } from './store/useAppStore'
 import { NavBar } from './components/NavBar'
 import { GoalScreen } from './screens/GoalScreen'
 import { BrainstormScreen } from './screens/BrainstormScreen'
@@ -19,6 +19,9 @@ import { CompanionApp } from './companion/CompanionApp'
 import { GuidancePanel } from './guidance/GuidancePanel'
 import { VoicePlayer } from './voice/VoicePlayer'
 import { SetupWizard } from './setup/SetupWizard'
+
+/** The main panel's screen names (the same words as the tabs), for screen readers. */
+const SCREEN_TITLES: Record<AppScreen, string> = { goal: 'Set Goal', brainstorm: 'Brainstorm', guidance: 'Guidance', memory: 'Memory', settings: 'Settings' }
 
 // Which window is this renderer instance? Routed via query parameter.
 const params = new URLSearchParams(window.location.search)
@@ -176,7 +179,7 @@ function MainPanel(): React.ReactElement {
 
   if (setupWizard) {
     return (
-      <div className="app-root">
+      <main className="app-root">
         <SetupWizard
           key={setupWizard.step ?? 'start'}
           platform={setupWizard.platform}
@@ -187,20 +190,22 @@ function MainPanel(): React.ReactElement {
             setCurrentScreen('guidance')
           }}
         />
-      </div>
+      </main>
     )
   }
 
   return (
     <div className="app-root">
       <NavBar />
-      <div className="screen-content">
+      <main className="screen-content" aria-label={SCREEN_TITLES[currentScreen]}>
+        {/* Screens with no visible page title get one for screen readers (Set Goal has its own). */}
+        {currentScreen !== 'goal' && <h1 className="sr-only">{SCREEN_TITLES[currentScreen]}</h1>}
         {currentScreen === 'goal' && <GoalScreen />}
         {currentScreen === 'brainstorm' && <BrainstormScreen />}
         {currentScreen === 'guidance' && <GuidanceWorkspace />}
         {currentScreen === 'memory' && <MemoryScreen />}
         {currentScreen === 'settings' && <SettingsScreen />}
-      </div>
+      </main>
 
       {goalNudgeVisible && (
         <GoalReviewNudge onReview={handleReviewGoal} onLooksGood={handleGoalLooksGood} />

@@ -21,7 +21,7 @@ import {
 } from './setup-permissions'
 import { mkdirSync } from 'fs'
 import type { BrowserWindow } from 'electron'
-import { isModelConfigured, isBuildyVoice } from '../renderer/src/types'
+import { isModelConfigured, isBuildyVoice, resolveWakeWordSet } from '../renderer/src/types'
 import { IPC, CHOOSE_MODEL_MESSAGE, CAPTURE_NOTICE_REQUIRED_MESSAGE, MAC_PERMISSION_MESSAGES, MAC_BLANK_CAPTURE_MESSAGE } from '../renderer/src/types'
 import type { AppSettings, NonSecretSettings, GuidancePayload, WatchStartResult, AnalyzeNowResult } from '../renderer/src/types'
 import { showGuidanceWindow, hideGuidanceWindow, resizeGuidanceWindow, showLastGuidance, getGuidanceWebContentsId, setGuidanceFocusable, clearGuidanceCache } from './guidance-window'
@@ -33,7 +33,7 @@ import * as nemp from './nemp-bridge'
 import { listOpenWindows, probeWatchedWindowFrame } from './capturer'
 import {
   loadProjectMemory, saveProjectMemory, loadGoal, setGoal, updateGoal,
-  loadSettings, loadNonSecretSettings, loadRedactedSettings, saveNonSecretSettings, resolveSettings,
+  loadSettings, loadNonSecretSettings, loadRedactedSettings, updateNonSecretSettings, saveGeneralSettings, resolveSettings,
   deleteAllMyBuildyData,
 } from './memory'
 import { setSecret, redactKnownSecrets, hasSecret, deleteSecret, getCustomKeyOrigin, confirmCustomKeyOrigin } from './secure-store'
@@ -45,6 +45,7 @@ import { fetchModelsForProvider } from './ai/model-fetch'
 import { modelListDiagnostic } from './ai/model-list-diagnostic'
 import { detectLocalServer, LOCAL_DEFAULT_ADDRESSES } from './ai/local-detect'
 import { hasVisionPass, recordVisionPass } from './vision-approvals'
+import { reserveProviderCall, hourlyCapMessage } from './cost-guard'
 import {
   startWatching, stopAnalysisLoop, pauseAnalysisLoop, resumeAnalysisLoop, setQuietMode, handleQuestion, handleSendPromptRequest, stopSignal,
   analyzeNow, getWatchStatus, getDisplayedAnalysis, setWatchBroadcast, setWatchMessage,
@@ -185,15 +186,18 @@ export function registerIpcHandlers(
   })
 
   // Settings → Voice: the "Hey Buildy" wake word on/off, saved at once; the robot starts or stops listening now.
+  // When WAKE_WORD_AVAILABLE is false (launch hold), enabling is rejected and a leftover true from an
+  // earlier test build is saved back as false, so the listener never starts.
   ipcMain.handle(IPC.WAKE_WORD_SET, async (event, enabledRaw: unknown) => {
     assertFromMainWindow(event, mainWcId(), 'WAKE_WORD_SET')
     if (typeof enabledRaw !== 'boolean') throw new Error('Expected on/off on WAKE_WORD_SET')
-    await saveNonSecretSettings({ ...(await loadNonSecretSettings()), wakeWordEnabled: enabledRaw })
+    const enabled = resolveWakeWordSet(enabledRaw)
+    await updateNonSecretSettings((current) => ({ ...current, wakeWordEnabled: enabled }))
     invalidateSettingsCache()
-    if (enabledRaw) void startListenEngine() // load the listening model now, so the first "Hey Buildy" is quick
+    if (enabled) void startListenEngine() // load the listening model now, so the first "Hey Buildy" is quick
     const companion = getCompanionWindow()
-    if (companion && !companion.isDestroyed()) companion.webContents.send(IPC.WAKE_WORD_CHANGED, enabledRaw)
-    logWatchEvent('wake-word', { enabled: enabledRaw })
+    if (companion && !companion.isDestroyed()) companion.webContents.send(IPC.WAKE_WORD_CHANGED, enabled)
+    logWatchEvent('wake-word', { enabled })
   })
 
   ipcMain.handle(IPC.LISTEN_STATUS, async () => listenStatus())
@@ -215,7 +219,7 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.BUILDY_VOICE_SET, async (event, voiceRaw: unknown) => {
     assertFromMainWindow(event, mainWcId(), 'BUILDY_VOICE_SET')
     if (!isBuildyVoice(voiceRaw)) throw new Error('Unknown voice on BUILDY_VOICE_SET')
-    await saveNonSecretSettings({ ...(await loadNonSecretSettings()), buildyVoice: voiceRaw })
+    await updateNonSecretSettings((current) => ({ ...current, buildyVoice: voiceRaw }))
     invalidateSettingsCache()
     buildyVoiceChanged()
     logWatchEvent('voice-chosen', { voice: voiceRaw })
@@ -253,6 +257,11 @@ export function registerIpcHandlers(
       const history = parseInput(chatHistorySchema, 'BRAINSTORM_START', historyRaw)
       const settings = resolveValidatedSettings('BRAINSTORM_START', settingsRaw)
       assertModelUsable(settings)
+      // Cost guard: Brainstorm requests count toward the hourly limit too.
+      if (!reserveProviderCall(settings.hourlyCallCap)) {
+        getMainWindow().webContents.send(IPC.BRAINSTORM_ERROR, hourlyCapMessage(settings.hourlyCallCap))
+        return
+      }
       const provider = getProvider(settings.provider)
       // Tag the reply with the project it was asked in: after a switch, late
       // chunks are dropped and the request itself is cancelled.
@@ -534,9 +543,11 @@ export function registerIpcHandlers(
         console.warn(`[IPC] rejected invalid input on channel SAVE_SETTINGS: baseUrl not allowed for provider ${nonSecret.provider}`)
         throw new Error('Disallowed base URL on SAVE_SETTINGS')
       }
-      // The wake word is only ever switched by its own toggle (WAKE_WORD_SET):
-      // a general Settings save keeps whatever is on disk, so it can't turn the microphone on.
-      await saveNonSecretSettings({ ...nonSecret, wakeWordEnabled: (await loadNonSecretSettings()).wakeWordEnabled })
+      // The wake word (WAKE_WORD_SET) and Buildy's voice (BUILDY_VOICE_SET) are only
+      // ever switched by their own controls: a general Settings save keeps their
+      // saved values, read inside the same queued update so a save that started
+      // earlier can't put back a value the user has just changed (memory.ts).
+      await saveGeneralSettings(nonSecret)
       // A custom endpoint moved to a different origin: its key is not carried
       // over — the user enters it again for the new endpoint.
       if (nonSecret.provider === 'custom' && hasSecret('customApiKey') &&
@@ -575,8 +586,7 @@ export function registerIpcHandlers(
     try {
       const companionId = getCompanionWindow()?.webContents.id ?? null
       assertFromWindowIds(event, [mainWcId(), companionId], 'CAPTURE_NOTICE_ACCEPT')
-      const nonSecret = await loadNonSecretSettings()
-      await saveNonSecretSettings({ ...nonSecret, captureNoticeAccepted: true })
+      await updateNonSecretSettings((current) => ({ ...current, captureNoticeAccepted: true }))
       invalidateSettingsCache()
     } catch (error) {
       console.error('[IPC] CAPTURE_NOTICE_ACCEPT error:', error)

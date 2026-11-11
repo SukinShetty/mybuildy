@@ -88,6 +88,30 @@ describe('replacing release files in place', () => {
     expect(empty.serves('SHA256SUMS.txt')).toBe('sums')
   })
 
+  it('a run cut off after parking the old file: the next run puts it back first, so a failed upload loses nothing (LA-10)', async () => {
+    const name = 'MyBuildy-Setup-0.1.0.exe'
+    // The served file was renamed aside, the new one never renamed in.
+    const fake = fakeRelease({ [`${name}.old`]: 'last good', [`${name}.uploading`]: 'half' }, false)
+    const upload = fake.api.upload
+    fake.api.upload = async () => { throw new Error('HTTP 502 synthetic upload failure') }
+    await expect(replaceAssetInPlace(fake.api, fake.release.id, name, 'new')).rejects.toThrow('synthetic upload failure')
+    expect(fake.serves(name)).toBe('last good')
+
+    // The next attempt then replaces it normally.
+    fake.api.upload = upload
+    await replaceAssetInPlace(fake.api, fake.release.id, name, 'new')
+    expect(fake.serves(name)).toBe('new')
+    expect([...fake.assets.values()].map((a) => a.name)).toEqual([name])
+  })
+
+  it('a run cut off after the new file went live: the leftover old file is removed and the replacement proceeds', async () => {
+    const name = 'latest.yml'
+    const fake = fakeRelease({ [name]: 'newer', [`${name}.old`]: 'older' }, false)
+    await replaceAssetInPlace(fake.api, fake.release.id, name, 'newest')
+    expect(fake.serves(name)).toBe('newest')
+    expect([...fake.assets.values()].map((a) => a.name)).toEqual([name])
+  })
+
   it('finds the release for a tag whether it is a draft or published', () => {
     const releases = [{ id: 1, tag_name: 'v0.0.9', draft: false }, { id: 2, tag_name: 'v0.1.0', draft: true }]
     expect(findReleaseForTag(releases, 'v0.1.0')).toEqual(releases[1])

@@ -19,9 +19,10 @@ import type { ProviderType, NonSecretSettings, SecretName, ModelChoice, VoiceFal
 import {
   BUILDY_VOICES, DEFAULT_BUILDY_VOICE,
   HOURLY_CALL_CAP_MIN, HOURLY_CALL_CAP_MAX, NO_SECURE_STORAGE_MESSAGE, API_CREDITS_NOTE, PROVIDER_BILLING_URLS,
-  dataDestinationNote, suggestsNextModel, UPDATE_CHECK_NOTE, WAKE_WORD_EXPLANATION, WAKE_WORD_UNAVAILABLE,
+  dataDestinationNote, suggestsNextModel, UPDATE_CHECK_NOTE,
 } from '../types'
 import { DEFAULT_VOICE_ID, ELEVENLABS_VOICES, voiceLabel } from '../voice-options'
+import { WakeWordSetting } from './wake-word-setting'
 
 // IPC errors arrive wrapped ("Error invoking remote method ...: Error: <msg>").
 // Show the clean, user-facing message when we recognise it.
@@ -143,7 +144,7 @@ export function SettingsScreen(): React.ReactElement {
   // Buildy's voice: Female voice (Bella) or Male voice (Puck), saved at once (used from the next sentence), and a sample of each.
   const [samplePlaying, setSamplePlaying] = useState<BuildyVoice | null>(null)
   const [sampleMessage, setSampleMessage] = useState<string | null>(null)
-  // The "Hey Buildy" wake word: saved at once; the robot starts or stops listening now.
+  // The "Hey Buildy" wake word: saved at once when offered; Coming soon at launch.
   const [listenModel, setListenModel] = useState<'missing' | 'off' | 'loading' | 'ready' | 'failed'>('off')
   useEffect(() => { void window.mybuildy.listenStatus().then(setListenModel).catch(() => {}) }, [])
   async function chooseWakeWord(enabled: boolean): Promise<void> {
@@ -608,12 +609,15 @@ export function SettingsScreen(): React.ReactElement {
 
         {/* Cost guard */}
         <div style={styles.section}>
-          <div style={styles.sectionLabel}>Usage limit</div>
-          <div style={styles.sectionHint}>
+          <label htmlFor="settings-hourly-cap" style={styles.sectionLabel}>Usage limit</label>
+          <div id="settings-hourly-cap-hint" style={styles.sectionHint}>
             The most AI requests MyBuildy will make in any one hour ({HOURLY_CALL_CAP_MIN}–{HOURLY_CALL_CAP_MAX}).
             Each one is billed to your key. Watching pauses when the limit is reached.
           </div>
           <input
+            id="settings-hourly-cap"
+            aria-label="Maximum AI requests per hour"
+            aria-describedby="settings-hourly-cap-hint"
             type="number"
             min={HOURLY_CALL_CAP_MIN}
             max={HOURLY_CALL_CAP_MAX}
@@ -663,18 +667,11 @@ export function SettingsScreen(): React.ReactElement {
             </div>
           )}
           <div style={styles.voiceOptionLabel}>Talk to MyBuildy hands-free</div>
-          <label style={styles.voiceChoiceLabel}>
-            <input
-              type="checkbox"
-              data-testid="wake-word-toggle"
-              checked={settings.wakeWordEnabled === true}
-              disabled={listenModel === 'missing' && settings.wakeWordEnabled !== true}
-              onChange={(e) => { void chooseWakeWord(e.target.checked) }}
-            />
-            Wake word (experimental): say &quot;Hey Buildy&quot;
-          </label>
-          <div style={styles.sectionHint} data-testid="wake-word-explanation">{WAKE_WORD_EXPLANATION}</div>
-          {listenModel === 'missing' && <div style={styles.sectionHint} role="status">{WAKE_WORD_UNAVAILABLE}</div>}
+          <WakeWordSetting
+            savedEnabled={settings.wakeWordEnabled === true}
+            listenModel={listenModel}
+            onChange={(enabled) => { void chooseWakeWord(enabled) }}
+          />
           <div style={styles.voiceOptionLabel}>ElevenLabs (your own key) — optional</div>
           <div style={styles.sectionHint}>
             With a key, MyBuildy speaks with the ElevenLabs voice you choose here.

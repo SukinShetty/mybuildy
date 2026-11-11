@@ -111,7 +111,7 @@ const styles = {
 
   tabActive: {
     background: 'var(--color-accent-muted)',
-    color: 'var(--color-accent)',
+    color: 'var(--color-accent-text)',
   } as React.CSSProperties,
 
   tabInactive: {
