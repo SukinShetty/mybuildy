@@ -2,7 +2,7 @@
 // openMicrophone), the real segmenter and request matcher, a MOCKED keyword model
 // (spot) and a fake listening model.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { WakeListener, shouldListenForWakeWord, type ListenIndicator } from './wake-listener'
+import { WakeListener, shouldListenForWakeWord, DETECTOR_NOT_RUNNING_MESSAGE, type ListenIndicator, type WakeDiagnostics } from './wake-listener'
 import { openMicrophone, micButtonState, micErrorMessage } from './voice-mic'
 import { defaultNonSecretSettings } from '../types'
 
@@ -291,5 +291,67 @@ describe('wake word: state stays true to the detector (regressions)', () => {
     release({ success: true, text: 'why did the tests fail?' }); await flush(); await flush()
     expect(onCommand).not.toHaveBeenCalled()
     expect(indicator.at(-1)).toBe('listening')
+  })
+})
+
+describe('wake word: the indicator never says "listening" when nothing can be detected (real-mic regression)', () => {
+  // Field report (Windows, 0.1.0): the dot stayed red ("listening") through ~10 tries of "Hey Buildy".
+  // If the on-device detector is not running (listening model failed to load, the keyword
+  // model missing, or far too slow), every keyword check comes back empty and the old code
+  // kept showing "listening" forever.
+  function listenerWith(spot: (s: Float32Array, reset: boolean) => Promise<number[]>, onDiagnostics?: (d: WakeDiagnostics) => void) {
+    return new WakeListener({
+      openMic: () => openMicrophone(media), spot,
+      transcribe: async () => ({ success: true, text: '' }), onCommand: async () => {},
+      onIndicator: (s, m) => { indicator.push(s); messages.push(m) },
+      explainMicError: (e) => micErrorMessage(e, 'win32'),
+      setTimer: () => 0, clearTimer: () => {}, onDiagnostics,
+    })
+  }
+  async function feed(seconds: number) {
+    const a = sec(seconds, true)
+    for (let i = 0; i < a.length; i += 4096) { pushAudio?.(a.subarray(i, i + 4096)); await flush() }
+  }
+
+  it('a detector that never gives a score: stops and says so (mic closed), instead of a red dot forever', async () => {
+    const listener = listenerWith(async () => [])
+    await listener.start()
+    const track = (await media.getUserMedia.mock.results[0].value).getTracks()[0]
+    await feed(10)
+    expect(indicator.at(-1)).toBe('error')
+    expect(messages.at(-1)).toBe(DETECTOR_NOT_RUNNING_MESSAGE)
+    expect(track.stop).toHaveBeenCalled()
+    expect(listener.running).toBe(false)
+  })
+
+  it('the normal ~2 s warm-up with no scores yet is not an error', async () => {
+    let fed = 0
+    const listener = listenerWith(async (s, reset) => { if (reset) fed = 0; fed += s.length; return fed < 16000 * 2.1 ? [] : new Array(Math.floor(s.length / 1280)).fill(0.01) })
+    await listener.start()
+    await feed(30)
+    expect(indicator.at(-1)).toBe('listening')
+    expect(indicator).not.toContain('error')
+  })
+
+  it('diagnostics report the best score about every 5 s (numbers only)', async () => {
+    const seen: WakeDiagnostics[] = []
+    let n = 0
+    const listener = listenerWith(async (s) => new Array(Math.floor(s.length / 1280)).fill(0).map(() => (++n === 20 ? 0.97 : 0.02)), (d) => seen.push(d))
+    await listener.start()
+    await feed(11)
+    expect(seen.length).toBe(2)
+    expect(seen[0].peak).toBe(0.97)
+    expect(seen[0].checks).toBeGreaterThan(50)
+    expect(seen[0].seconds).toBeGreaterThanOrEqual(5)
+    expect(seen[1].peak).toBe(0.02)
+  })
+})
+
+describe('wake word test readout (MYBUILDY_WAKE_DEBUG=1 only)', () => {
+  it('shows the best score against the threshold, and the microphone', async () => {
+    const { wakeDebugText } = await import('./wake-listener')
+    expect(wakeDebugText(null, null)).toBe('Hey Buildy test: waiting for the first scores...')
+    expect(wakeDebugText({ peak: 0.9731, checks: 62, seconds: 5.1 }, 'Focusrite USB, 48000 Hz, 1 ch, AGC on'))
+      .toBe('Hey Buildy test: best 97.31% (wakes at 99.95%), 62 checks in 5.1 s · Focusrite USB, 48000 Hz, 1 ch, AGC on')
   })
 })

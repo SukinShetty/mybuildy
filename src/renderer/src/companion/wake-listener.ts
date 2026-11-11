@@ -44,9 +44,33 @@ export interface WakeListenerDeps {
   onIndicator(state: ListenIndicator, message?: string): void
   /** Plain words for a microphone error (voice-mic.ts). */
   explainMicError(error: unknown): string
+  /** Optional, for testing on a real microphone: the best "Hey Buildy" score over the last
+   *  ~5 s of listening (scores are numbers only; no audio is kept or sent). */
+  onDiagnostics?(d: WakeDiagnostics): void
   now?(): number
   setTimer?(fn: () => void, ms: number): unknown
   clearTimer?(handle: unknown): void
+}
+
+export interface WakeDiagnostics {
+  /** Highest keyword score over this stretch (0–1); WAKE_THRESHOLD wakes. */
+  peak: number
+  /** Keyword scores computed in this stretch (one per 80 ms when the detector keeps up). */
+  checks: number
+  /** Seconds of microphone audio in this stretch. */
+  seconds: number
+}
+
+export const DETECTOR_NOT_RUNNING_MESSAGE =
+  'MyBuildy\'s "Hey Buildy" detector isn\'t running on this computer, so it can\'t hear the wake word. Use the mic button instead, or turn the wake word off and on in Settings > Voice.'
+
+/** MYBUILDY_WAKE_DEBUG=1: the robot's line while listening, e.g. "Hey Buildy test: best 97.31% (wakes at 99.95%)…". */
+export function wakeDebugText(d: WakeDiagnostics | null, mic: string | null): string {
+  const pct = (v: number): string => `${(v * 100).toFixed(2)}%`
+  const head = d
+    ? `Hey Buildy test: best ${pct(d.peak)} (wakes at ${pct(WAKE_THRESHOLD)}), ${d.checks} checks in ${d.seconds} s`
+    : 'Hey Buildy test: waiting for the first scores...'
+  return mic ? `${head} · ${mic}` : head
 }
 
 /** Listen for the wake word only when ALL of these hold. */
@@ -72,6 +96,11 @@ export const COMMAND_WINDOW_MS = 6000
 const SPOT_CHUNK = 2560
 /** If the keyword model falls this far behind (slow computer), old audio is dropped. */
 const MAX_BACKLOG = 16000
+/** Audio the keyword model may take without giving a single score before listening is
+ *  reported as broken (it needs ~2 s after a reset; 8 s leaves room for a slow start). */
+const NO_SCORES_LIMIT = 16000 * 8
+/** Diagnostics are reported about every 5 s of audio. */
+const DIAG_SAMPLES = 16000 * 5
 const MAX_RESTARTS = 3
 const RESTART_DELAY_MS = 1500
 
@@ -119,6 +148,9 @@ export class WakeListener {
   private spotQueue: Float32Array[] = []
   private spotQueued = 0
   private spotReset = true
+  /** Audio sent to the keyword model since its last score (or a deliberate reset) that gave none. */
+  private unscored = 0
+  private diag: WakeDiagnostics = { peak: 0, checks: 0, seconds: 0 }
   private readonly deps: WakeListenerDeps
 
   constructor(deps: WakeListenerDeps) {
@@ -175,7 +207,7 @@ export class WakeListener {
     }
     if (session !== this.session || !this.wanted) { mic.close(); return }
     this.mic = mic
-    this.spotQueue = []; this.spotQueued = 0; this.spotReset = true
+    this.spotQueue = []; this.spotQueued = 0; this.spotReset = true; this.unscored = 0
     this.transcribingWindow = null
     this.segmenter = new SpeechSegmenter((segment) => { void this.onSegment(segment, session) })
     mic.onSamples((samples) => {
@@ -204,6 +236,9 @@ export class WakeListener {
         const reset = this.spotReset; this.spotReset = false
         const scores = await this.deps.spot(chunk, reset)
         if (session !== this.session || this.phase !== 'listening') return
+        this.noteDiagnostics(scores, chunk.length)
+        if (scores.length > 0) this.unscored = 0
+        else if ((this.unscored += chunk.length) >= NO_SCORES_LIMIT) { this.detectorBroken(); return }
         if (scores.some((s) => s >= WAKE_THRESHOLD)) this.wake()
       }
     } catch (error) {
@@ -213,10 +248,32 @@ export class WakeListener {
     }
   }
 
+  /** The keyword model keeps returning nothing (not loaded, failed, or far too slow):
+   *  say so instead of showing "listening" while nothing can be heard. */
+  private detectorBroken(): void {
+    console.warn('[Wake] no keyword scores for', (this.unscored / 16000).toFixed(1), 's of audio: detector not running')
+    this.wanted = false
+    this.closeWindow()
+    this.closeMic()
+    this.session++
+    this.setPhase('error', DETECTOR_NOT_RUNNING_MESSAGE)
+  }
+
+  private noteDiagnostics(scores: number[], samples: number): void {
+    if (!this.deps.onDiagnostics) return
+    const d = this.diag
+    for (const s of scores) d.peak = Math.max(d.peak, s)
+    d.checks += scores.length
+    d.seconds += samples / 16000
+    if (d.seconds * 16000 < DIAG_SAMPLES) return
+    this.diag = { peak: 0, checks: 0, seconds: 0 }
+    this.deps.onDiagnostics({ ...d, seconds: Math.round(d.seconds * 10) / 10 })
+  }
+
   private wake(): void {
     const id = ++this.windowId
     this.windowDeadline = this.now() + COMMAND_WINDOW_MS
-    this.spotQueue = []; this.spotQueued = 0; this.spotReset = true
+    this.spotQueue = []; this.spotQueued = 0; this.spotReset = true; this.unscored = 0
     this.setPhase('heard')
     const set = this.deps.setTimer ?? ((fn, ms) => setTimeout(fn, ms))
     // No request in time (often a false wake): back to listening, nothing sent anywhere.
@@ -241,7 +298,7 @@ export class WakeListener {
 
   private backToListening(): void {
     if (!this.wanted || !this.mic) return
-    this.spotQueue = []; this.spotQueued = 0; this.spotReset = true
+    this.spotQueue = []; this.spotQueued = 0; this.spotReset = true; this.unscored = 0
     this.setPhase('listening')
   }
 

@@ -8,12 +8,14 @@ All notable changes to MyBuildy are documented here. The format follows
 
 ### Added
 
+- **Wake word test readout.** Start MyBuildy with `MYBUILDY_WAKE_DEBUG=1` and, while it listens for "Hey Buildy", the robot shows the best score of the last ~5 s against the 99.95% it needs, how many checks ran, and which microphone (name, sample rate, channels, auto gain) is open. Scores only: no audio is kept or sent.
 - **Update check when the app opens.** Installed Windows and Mac apps ask GitHub Releases once at launch whether a newer version is published. If so, the robot shows "New update available" with the release notes, **Update** (downloads) and **Later**; once downloaded, **Restart to update** installs. Nothing downloads or installs without a click; offline or errors stay silent (logged). Releases now also carry `latest.yml`, `latest-mac.yml`, Mac update zips and blockmaps. See `docs/SHIPPING-AN-UPDATE.md`.
 - **"Hey Buildy" wake word (experimental)** (off by default; Settings → Voice → *Wake word (experimental): say "Hey Buildy"*). Say "Hey Buildy, give me the prompt" for the next prompt, or "Hey Buildy, …" with any question. A small keyword model (Google's Apache-2.0 speech embedding plus our own classifier, about 2.6 MB) listens on this computer; nothing is sent before the name is heard, and if no request follows within a few seconds it quietly goes back to listening. Pauses while the computer sleeps or is locked; recovers when the microphone is unplugged or switched; a blocked microphone explains where to allow it (Windows and Mac). Works best in a quiet room; the mic button is always available. Licences: THIRD_PARTY_NOTICES.md (shipped with the app).
 - **The mic button is always shown.** Spoken questions are turned into text on this computer, no ElevenLabs key needed. If that isn't possible and no key is saved, the button explains how to get voice working.
 
 ### Changed
 
+- **The wake word no longer shows "listening" when it can't hear anything.** If the on-device detector returns no scores for 8 s of audio (not loaded, failed, or far too slow), listening stops with a message pointing to the mic button. While starting, the dot is amber instead of red.
 - Installers are about 67 MB larger (the bundled listening model, about 64 MB, and the wake word model, about 2.6 MB). `npm run fetch:voice` now also downloads it (pinned revision, checksums verified).
 
 ## [0.1.0] — 2026-09-23
