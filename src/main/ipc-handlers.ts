@@ -45,6 +45,7 @@ import { fetchModelsForProvider } from './ai/model-fetch'
 import { modelListDiagnostic } from './ai/model-list-diagnostic'
 import { detectLocalServer, LOCAL_DEFAULT_ADDRESSES } from './ai/local-detect'
 import { hasVisionPass, recordVisionPass } from './vision-approvals'
+import { reserveProviderCall, hourlyCapMessage } from './cost-guard'
 import {
   startWatching, stopAnalysisLoop, pauseAnalysisLoop, resumeAnalysisLoop, setQuietMode, handleQuestion, handleSendPromptRequest, stopSignal,
   analyzeNow, getWatchStatus, getDisplayedAnalysis, setWatchBroadcast, setWatchMessage,
@@ -256,6 +257,11 @@ export function registerIpcHandlers(
       const history = parseInput(chatHistorySchema, 'BRAINSTORM_START', historyRaw)
       const settings = resolveValidatedSettings('BRAINSTORM_START', settingsRaw)
       assertModelUsable(settings)
+      // Cost guard: Brainstorm requests count toward the hourly limit too.
+      if (!reserveProviderCall(settings.hourlyCallCap)) {
+        getMainWindow().webContents.send(IPC.BRAINSTORM_ERROR, hourlyCapMessage(settings.hourlyCallCap))
+        return
+      }
       const provider = getProvider(settings.provider)
       // Tag the reply with the project it was asked in: after a switch, late
       // chunks are dropped and the request itself is cancelled.
