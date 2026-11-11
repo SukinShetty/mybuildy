@@ -609,12 +609,15 @@ export function SettingsScreen(): React.ReactElement {
 
         {/* Cost guard */}
         <div style={styles.section}>
-          <div style={styles.sectionLabel}>Usage limit</div>
-          <div style={styles.sectionHint}>
+          <label htmlFor="settings-hourly-cap" style={styles.sectionLabel}>Usage limit</label>
+          <div id="settings-hourly-cap-hint" style={styles.sectionHint}>
             The most AI requests MyBuildy will make in any one hour ({HOURLY_CALL_CAP_MIN}–{HOURLY_CALL_CAP_MAX}).
             Each one is billed to your key. Watching pauses when the limit is reached.
           </div>
           <input
+            id="settings-hourly-cap"
+            aria-label="Maximum AI requests per hour"
+            aria-describedby="settings-hourly-cap-hint"
             type="number"
             min={HOURLY_CALL_CAP_MIN}
             max={HOURLY_CALL_CAP_MAX}

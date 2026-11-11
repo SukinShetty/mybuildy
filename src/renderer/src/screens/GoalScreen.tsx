@@ -156,9 +156,10 @@ export function GoalScreen(): React.ReactElement {
       <div style={styles.inner}>
         {/* Project switcher — each project has its own memory */}
         <div style={styles.projectBar}>
-          <div style={styles.projectLabel}>PROJECT</div>
+          <label htmlFor="goal-project-select" style={styles.projectLabel}>PROJECT</label>
           <div style={styles.projectRow}>
             <select
+              id="goal-project-select"
               value={activeProject?.id ?? ''}
               onChange={(e) => handleSwitchProject(e.target.value)}
               disabled={switching || projects.length === 0}
