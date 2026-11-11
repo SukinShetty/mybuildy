@@ -35,7 +35,8 @@ test.beforeAll(async ({}, testInfo) => {
     const Original = window.Audio
     ;(window as unknown as { Audio: unknown }).Audio = function (src?: string) {
       const audio = new Original(src)
-      audio.addEventListener('canplaythrough', () => w.__clips.push({ wav: (src ?? '').startsWith('data:audio/wav'), duration: audio.duration }))
+      // VoicePlayer labels every clip audio/mpeg; Kokoro's are WAV (RIFF header).
+      audio.addEventListener('canplaythrough', () => w.__clips.push({ wav: atob((src ?? '').split(',')[1] ?? '').startsWith('RIFF'), duration: audio.duration }))
       return audio
     } as unknown as typeof Audio
   })
