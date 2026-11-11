@@ -9,6 +9,8 @@
 //   4. delete "<name>.old"
 // The link is unavailable only between 2 and 3 — two back-to-back API calls.
 // If 3 fails, the old file is renamed back, so the link keeps the old file.
+// If a run was cut off between 2 and 3, the next run first renames
+// "<name>.old" back to "<name>", so the last good file is never lost.
 //
 // The GitHub calls are injected (see release-assets.mjs), so the order is
 // unit-tested (release-assets-lib.test.ts).
@@ -37,14 +39,28 @@ export function uploadOrder(names) {
  */
 export async function replaceAssetInPlace(api, releaseId, name, data, log = () => {}) {
   const before = await api.listAssets(releaseId)
-  // Leftovers from an interrupted earlier run.
+  let old = before.find((a) => a.name === name) || null
+  // Leftovers from an interrupted earlier run. "<name>.uploading" is never
+  // served, so it goes. "<name>.old" is the last good file when the run
+  // stopped between steps 2 and 3 (nothing serves "<name>"): it is put back
+  // under its name FIRST, so it is never deleted before a replacement is live.
+  // When "<name>" is served too (the run stopped between 3 and 4), "<name>"
+  // is the finished replacement and "<name>.old" can go.
+  const parked = before.find((a) => a.name === name + OLD) || null
+  if (parked && !old) {
+    log(`restoring ${name} from leftover ${parked.name}`)
+    await api.rename(parked.id, name)
+    old = parked
+  } else if (parked) {
+    log(`removing leftover ${parked.name}`)
+    await api.remove(parked.id)
+  }
   for (const a of before) {
-    if (a.name === name + UPLOADING || a.name === name + OLD) {
+    if (a.name === name + UPLOADING) {
       log(`removing leftover ${a.name}`)
       await api.remove(a.id)
     }
   }
-  const old = before.find((a) => a.name === name) || null
 
   const fresh = await api.upload(releaseId, name + UPLOADING, data)
   if (!old) {
