@@ -86,6 +86,11 @@ jobs:
       - name: Paste goes only to the picked window (real Windows)
         run: npx vitest run src/main/paste-target.windows.test.ts
 
+      # The happy path alone, first thing in a fresh run (how the pre-launch
+      # audit saw it deliver nothing on one PC).
+      - name: Paste happy path on its own (real Windows)
+        run: npx vitest run src/main/paste-target.windows.test.ts -t "happy path"
+
       - name: Package Windows app
         run: npx electron-builder --win nsis --x64 --publish never
 
