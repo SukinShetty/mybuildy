@@ -33,7 +33,7 @@ import * as nemp from './nemp-bridge'
 import { listOpenWindows, probeWatchedWindowFrame } from './capturer'
 import {
   loadProjectMemory, saveProjectMemory, loadGoal, setGoal, updateGoal,
-  loadSettings, loadNonSecretSettings, loadRedactedSettings, saveNonSecretSettings, resolveSettings,
+  loadSettings, loadNonSecretSettings, loadRedactedSettings, updateNonSecretSettings, saveGeneralSettings, resolveSettings,
   deleteAllMyBuildyData,
 } from './memory'
 import { setSecret, redactKnownSecrets, hasSecret, deleteSecret, getCustomKeyOrigin, confirmCustomKeyOrigin } from './secure-store'
@@ -191,7 +191,7 @@ export function registerIpcHandlers(
     assertFromMainWindow(event, mainWcId(), 'WAKE_WORD_SET')
     if (typeof enabledRaw !== 'boolean') throw new Error('Expected on/off on WAKE_WORD_SET')
     const enabled = resolveWakeWordSet(enabledRaw)
-    await saveNonSecretSettings({ ...(await loadNonSecretSettings()), wakeWordEnabled: enabled })
+    await updateNonSecretSettings((current) => ({ ...current, wakeWordEnabled: enabled }))
     invalidateSettingsCache()
     if (enabled) void startListenEngine() // load the listening model now, so the first "Hey Buildy" is quick
     const companion = getCompanionWindow()
@@ -218,7 +218,7 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.BUILDY_VOICE_SET, async (event, voiceRaw: unknown) => {
     assertFromMainWindow(event, mainWcId(), 'BUILDY_VOICE_SET')
     if (!isBuildyVoice(voiceRaw)) throw new Error('Unknown voice on BUILDY_VOICE_SET')
-    await saveNonSecretSettings({ ...(await loadNonSecretSettings()), buildyVoice: voiceRaw })
+    await updateNonSecretSettings((current) => ({ ...current, buildyVoice: voiceRaw }))
     invalidateSettingsCache()
     buildyVoiceChanged()
     logWatchEvent('voice-chosen', { voice: voiceRaw })
@@ -537,9 +537,11 @@ export function registerIpcHandlers(
         console.warn(`[IPC] rejected invalid input on channel SAVE_SETTINGS: baseUrl not allowed for provider ${nonSecret.provider}`)
         throw new Error('Disallowed base URL on SAVE_SETTINGS')
       }
-      // The wake word is only ever switched by its own toggle (WAKE_WORD_SET):
-      // a general Settings save keeps whatever is on disk, so it can't turn the microphone on.
-      await saveNonSecretSettings({ ...nonSecret, wakeWordEnabled: (await loadNonSecretSettings()).wakeWordEnabled })
+      // The wake word (WAKE_WORD_SET) and Buildy's voice (BUILDY_VOICE_SET) are only
+      // ever switched by their own controls: a general Settings save keeps their
+      // saved values, read inside the same queued update so a save that started
+      // earlier can't put back a value the user has just changed (memory.ts).
+      await saveGeneralSettings(nonSecret)
       // A custom endpoint moved to a different origin: its key is not carried
       // over — the user enters it again for the new endpoint.
       if (nonSecret.provider === 'custom' && hasSecret('customApiKey') &&
@@ -578,8 +580,7 @@ export function registerIpcHandlers(
     try {
       const companionId = getCompanionWindow()?.webContents.id ?? null
       assertFromWindowIds(event, [mainWcId(), companionId], 'CAPTURE_NOTICE_ACCEPT')
-      const nonSecret = await loadNonSecretSettings()
-      await saveNonSecretSettings({ ...nonSecret, captureNoticeAccepted: true })
+      await updateNonSecretSettings((current) => ({ ...current, captureNoticeAccepted: true }))
       invalidateSettingsCache()
     } catch (error) {
       console.error('[IPC] CAPTURE_NOTICE_ACCEPT error:', error)
