@@ -4,7 +4,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { StopGeneration, transcribeAndAsk } from './voice-question'
-import { WakeListener, shouldListenForWakeWord, type ListenIndicator } from './wake-listener'
+import { WakeListener, shouldListenForWakeWord, wakeDebugText, type ListenIndicator, type WakeDiagnostics } from './wake-listener'
 import { openMicrophone, micButtonState, micErrorMessage, type ListenModel, type OpenedMic } from './voice-mic'
 import type { VoiceCommand } from './wake-phrase'
 import { useCompanionStore } from '../store/useCompanionStore'
@@ -68,6 +68,9 @@ export function CompanionApp(): React.ReactElement {
   const [systemPaused, setSystemPaused] = useState(false) // asleep / screen locked
   const [listenIndicator, setListenIndicator] = useState<ListenIndicator>('off')
   const [listenMessage, setListenMessage] = useState<string | null>(null)
+  // MYBUILDY_WAKE_DEBUG=1 only: how close "Hey Buildy" gets on this microphone (numbers, never audio).
+  const [wakeDiag, setWakeDiag] = useState<WakeDiagnostics | null>(null)
+  const [wakeMicInfo, setWakeMicInfo] = useState<string | null>(null)
   const [robotVisible, setRobotVisible] = useState(document.visibilityState !== 'hidden')
 
   // ─── Robot animation signals ────────────────────────────────────────
@@ -380,12 +383,24 @@ export function CompanionApp(): React.ReactElement {
   const wakeRef = useRef<WakeListener | null>(null)
   if (!wakeRef.current) {
     wakeRef.current = new WakeListener({
-      openMic: () => openMicrophone(),
+      openMic: async () => {
+        const mic = await openMicrophone()
+        if (window.mybuildy.wakeDebug) {
+          const s = mic.stream.getAudioTracks()[0]?.getSettings() ?? {}
+          const info = `${mic.stream.getAudioTracks()[0]?.label ?? '?'}, ${s.sampleRate ?? '?'} Hz, ${s.channelCount ?? '?'} ch, AGC ${s.autoGainControl ? 'on' : 'off'}`
+          console.log('[Wake] microphone:', info)
+          setWakeMicInfo(info); setWakeDiag(null)
+        }
+        return mic
+      },
       spot: (samples, reset) => window.mybuildy.spotWakeWord(samples, reset),
       transcribe: (samples) => window.mybuildy.transcribeLocally(samples),
       onCommand: (command) => runVoiceCommandRef.current(command),
       onIndicator: (state, message) => { setListenIndicator(state); setListenMessage(message ?? null) },
       explainMicError: (error) => micErrorMessage(error, window.mybuildy.platform),
+      onDiagnostics: window.mybuildy.wakeDebug
+        ? (d) => { console.log('[Wake] best score', d.peak.toFixed(4), 'checks', d.checks, 'in', d.seconds, 's'); setWakeDiag(d) }
+        : undefined,
     })
   }
   const runVoiceCommandRef = useRef(runVoiceCommand)
@@ -514,6 +529,7 @@ export function CompanionApp(): React.ReactElement {
     : micError ? micError
     : listenIndicator === 'heard' ? 'Yes? Ask your question...'
     : listenIndicator === 'error' && listenMessage ? listenMessage
+    : window.mybuildy.wakeDebug && listenIndicator === 'listening' ? wakeDebugText(wakeDiag, wakeMicInfo)
     : null
 
   // What is going on, for the robot's animation (robot-animation.ts maps it).
@@ -747,7 +763,7 @@ function MicBtn({ micState, onClick, disabled, explain, indicator, indicatorTitl
         role="status"
         aria-label={indicatorTitle}
         title={indicatorTitle}
-        style={{ ...S.wakeDot, ...(indicator === 'error' ? S.wakeDotError : indicator === 'heard' || indicator === 'working' ? S.wakeDotHeard : {}) }}
+        style={{ ...S.wakeDot, ...(indicator === 'error' ? S.wakeDotError : indicator === 'starting' ? S.wakeDotStarting : indicator === 'heard' || indicator === 'working' ? S.wakeDotHeard : {}) }}
       />
     )}
     </span>
@@ -957,6 +973,7 @@ const S = {
   },
   wakeDotHeard: { background: '#30D158' },
   wakeDotError: { background: '#8E8E93', animation: 'none' },
+  wakeDotStarting: { background: '#FF9F0A', animation: 'none' },
   micActive: {
     background: 'rgba(255,69,58,0.25)',
     color: '#FF453A',

@@ -50,6 +50,10 @@ const mybuildyAPI = {
   // macOS/Linux fall back to clipboard copy.
   platform: process.platform as string,
 
+  // Testing the "Hey Buildy" wake word on a real microphone: start MyBuildy with
+  // MYBUILDY_WAKE_DEBUG=1 and the robot shows how close each try gets (scores only).
+  wakeDebug: process.env['MYBUILDY_WAKE_DEBUG'] === '1',
+
   // ─── Window listing ──────────────────────────────────────────────────────
   listWindows: (): Promise<WindowSource[]> =>
     ipcRenderer.invoke(IPC.LIST_WINDOWS),
