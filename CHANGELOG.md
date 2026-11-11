@@ -6,6 +6,8 @@ All notable changes to MyBuildy are documented here. The format follows
 
 ## [Unreleased]
 
+These ship in rebuilt 0.1.0 downloads; the version stays 0.1.0. The update check and the mic button came in the Nov 4, 2026 rebuild (which offered the wake word as an experimental opt-in). The launch rebuild shows the wake word as Coming soon. The next version, 0.1.1, is the first one installed apps are told about.
+
 ### Added
 
 - **Update check when the app opens.** Installed Windows and Mac apps ask GitHub Releases once at launch whether a newer version is published. If so, the robot shows "New update available" with the release notes, **Update** (downloads) and **Later**; once downloaded, **Restart to update** installs. Nothing downloads or installs without a click; offline or errors stay silent (logged). Releases now also carry `latest.yml`, `latest-mac.yml`, Mac update zips and blockmaps. See `docs/SHIPPING-AN-UPDATE.md`.

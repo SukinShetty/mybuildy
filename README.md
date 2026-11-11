@@ -134,7 +134,7 @@ Already set up with a key? Open **Settings → Advanced: more providers and loca
 
 ### Windows (installer)
 
-1. Download **`MyBuildy-Setup-0.1.0.exe`** (~272 MB, most of it Buildy's own voice) from the [latest release](https://github.com/SukinShetty/mybuildy/releases/latest).
+1. Download **`MyBuildy-Setup-0.1.0.exe`** (~305 MB, most of it Buildy's own voice and the on-device listening model) from the [latest release](https://github.com/SukinShetty/mybuildy/releases/latest).
 2. Windows SmartScreen will warn you because the installer is **unsigned** (signing certificates are expensive; a signed installer is on the roadmap). Click **More info**, then **Run anyway**.
 3. The release page includes a `SHA256SUMS.txt` if you want to verify the download.
 
