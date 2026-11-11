@@ -24,8 +24,8 @@ import { startKokoro, stopKokoro } from './kokoro-engine'
 import { startListenEngine, stopListenEngine } from './listen-engine'
 import { PowerPause } from './power-pause'
 import { migratePlaintextSecrets } from './secure-store'
-import { settingsFilePath, loadRedactedSettings, loadGoal, loadNonSecretSettings } from './memory'
-import { isModelConfigured } from '../renderer/src/types'
+import { settingsFilePath, loadRedactedSettings, loadGoal, loadNonSecretSettings, saveNonSecretSettings } from './memory'
+import { isModelConfigured, wakeWordMayRun } from '../renderer/src/types'
 import { debugLog } from './debug-log'
 import { isSafeExternalUrl, isAllowedAppNavigation, isBlockedDevShortcut } from './navigation-guard'
 import { registerE2eTestHooks } from './e2e-hooks'
@@ -394,8 +394,16 @@ app.whenReady().then(async () => {
 
   // Buildy's own voice: load the bundled model now and keep it loaded.
   startKokoro()
-  // On-device listening: loaded at startup only if the user turned the wake word on.
-  void loadNonSecretSettings().then((s) => { if (s.wakeWordEnabled) void startListenEngine() }).catch(() => {})
+  // On-device listening: loaded at startup only if the wake word is offered and the user turned it on.
+  // When WAKE_WORD_AVAILABLE is false, a leftover true from an earlier test build does not start it,
+  // and is written back as false so the feature stays off until they opt in again later.
+  void loadNonSecretSettings().then(async (s) => {
+    if (!wakeWordMayRun(s.wakeWordEnabled)) {
+      if (s.wakeWordEnabled) await saveNonSecretSettings({ ...s, wakeWordEnabled: false })
+      return
+    }
+    void startListenEngine()
+  }).catch(() => {})
   // The wake word pauses while the computer sleeps or the screen is locked, and resumes after.
   // Sleep and lock are tracked separately (power-pause.ts): waking onto a locked screen stays paused.
   let startLocked = false
