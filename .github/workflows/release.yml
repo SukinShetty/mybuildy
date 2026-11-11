@@ -64,6 +64,9 @@ jobs:
       - name: Package Windows installer
         run: npx electron-builder --win nsis --x64 --publish never
 
+      - name: Licence check (the packaged Windows app)
+        run: node scripts/check-licences.mjs --out out --app dist/win-unpacked/resources
+
       # Tag, package.json and the packaged app must all carry the same version.
       - name: Check versions agree
         run: node scripts/check-release-version.mjs ${{ github.ref_name }}
@@ -122,6 +125,11 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx electron-builder --mac dmg zip --arm64 --x64 --publish never
+
+      - name: Licence check (the packaged Mac apps)
+        run: |
+          node scripts/check-licences.mjs --out out --app dist/mac-arm64/MyBuildy.app/Contents/Resources
+          node scripts/check-licences.mjs --out out --app dist/mac/MyBuildy.app/Contents/Resources
 
       # Tag, package.json and the packaged apps must all carry the same version.
       - name: Check versions agree

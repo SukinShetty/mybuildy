@@ -34,6 +34,19 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Fails if GPL / AGPL (or LGPL, non-commercial, unknown-licence) code would
+      # ship, including eSpeak NG hidden inside a package, or if
+      # THIRD_PARTY_NOTICES.md misses a shipped package.
+      - name: Licence check (dependencies + built bundles)
+        run: node scripts/check-licences.mjs --out out --report licence-report-${{ runner.os }}.md
+
+      - uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'Linux'
+        with:
+          name: licence-report
+          path: licence-report-*.md
+          if-no-files-found: ignore
+
       - name: Test
         run: npm test
 
@@ -88,6 +101,13 @@ jobs:
 
       - name: Package Windows app
         run: npx electron-builder --win nsis --x64 --publish never
+
+      - name: Licence check (the packaged Windows app)
+        run: node scripts/check-licences.mjs --out out --app dist/win-unpacked/resources
+
+      - name: Installer size
+        shell: bash
+        run: ls -l dist/MyBuildy-Setup-*.exe dist/win-unpacked/resources/app.asar && du -sb dist/win-unpacked/resources/* | sort -n
 
       # The in-app update check needs these: the feed next to the installer and
       # the updater config inside the app (from package.json build.publish).
@@ -180,3 +200,22 @@ jobs:
 
       - name: E2E (dev build)
         run: npm run test:e2e
+
+      # Unsigned test packaging (no Apple certificate here; after-pack.js ad-hoc
+      # signs): the licence check runs on both real Mac apps, and the voice
+      # engine must load inside the Apple Silicon app. Nothing is uploaded.
+      - name: Package Mac apps (unsigned test build, arm64 + x64, dmg + zip)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --mac dmg zip --arm64 --x64 --publish never
+
+      - name: Licence check (the packaged Mac apps)
+        run: |
+          node scripts/check-licences.mjs --out out --app dist/mac-arm64/MyBuildy.app/Contents/Resources
+          node scripts/check-licences.mjs --out out --app dist/mac/MyBuildy.app/Contents/Resources
+
+      - name: Mac package sizes
+        run: ls -l dist/*.dmg dist/*.zip && du -sk dist/mac-arm64/MyBuildy.app/Contents/Resources/* dist/mac/MyBuildy.app/Contents/Resources/* | sort -n | tail -20
+
+      - name: Buildy's voice loads inside the packaged Apple Silicon app
+        run: MYBUILDY_E2E_EXE="$PWD/dist/mac-arm64/MyBuildy.app/Contents/MacOS/MyBuildy" npx playwright test e2e/buildy-voice.spec.ts

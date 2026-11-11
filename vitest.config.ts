@@ -7,5 +7,8 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.ts'],
+    // phonemize's ESM build imports JSON without `with { type: 'json' }`, which
+    // plain Node rejects; let Vite transform it (as the app build does).
+    server: { deps: { inline: ['phonemize'] } },
   },
 })
