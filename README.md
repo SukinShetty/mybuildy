@@ -184,7 +184,7 @@ Afterwards the line under the robot always says the next thing to do. The robot'
 
 **Voice.** Buildy speaks with his own voice, which is bundled with MyBuildy and runs on your computer: free, nothing to set up, nothing sent anywhere. Choose **Female voice** (the default) or **Male voice** in Settings → Voice, with Play sample for each; the change applies from the next sentence. **Talk to Buildy.** The mic button is always on the robot's bar: click it, ask your question, click again. What you say is turned into text **on this computer** by a small listening model bundled with MyBuildy (about 64 MB), so your voice isn't sent anywhere; the question then goes through the normal ask flow. The microphone is only requested the first time you click it (never during setup). Optional: add an **ElevenLabs** key in Settings → Voice to use an ElevenLabs voice instead (if the listening model is missing, the key is also used to turn speech into text).
 
-**"Hey Buildy" wake word (experimental, off by default).** Turn on **Wake word (experimental): say "Hey Buildy"** in Settings → Voice to ask hands-free: say *"Hey Buildy, give me the prompt"* (shows the next prompt, the same as Analyze Now; it never presses Enter) or *"Hey Buildy, why did the tests fail?"*. While it is on, the microphone is open whenever MyBuildy is watching, the robot is on screen and the computer is awake and unlocked, and a small dot on the robot's bar shows it is listening. A small keyword model checks for the name on this computer; nothing is sent anywhere before it hears "Hey Buildy", and if no request follows within a few seconds it goes back to listening. It is experimental: it works best in a quiet room, can miss the name, and may occasionally wake by mistake (about 1–2 times an hour of nearby talk in our tests). The mic button is always available.
+**"Hey Buildy" wake word — Coming soon.** Hands-free voice is coming in a future update. Settings → Voice shows a greyed-out **Wake word: say "Hey Buildy" — Coming soon** checkbox; it does not turn on, even if an earlier test build had it on. For now, use the mic button on the robot's bar.
 
 ---
 
@@ -210,7 +210,7 @@ This is everything MyBuildy sends, and where:
 |---|---|---|
 | **Screen analysis** (watching, and Analyze on the Guidance screen) | An image of the window you chose, its title, your goal and this project's memory | **Your AI provider** |
 | **Brainstorm** | Your messages and the conversation so far | **Your AI provider** |
-| **Spoken questions** (mic button, or after "MyBuildy") | Your recording | Nobody: turned into text **on this computer**. Only if the listening model is missing and you saved an ElevenLabs key: **ElevenLabs** speech-to-text |
+| **Spoken questions** (mic button) | Your recording | Nobody: turned into text **on this computer**. Only if the listening model is missing and you saved an ElevenLabs key: **ElevenLabs** speech-to-text. Hands-free "Hey Buildy" voice is coming soon and does not listen yet |
 | | The transcript, plus a fresh screenshot of the watched window and the project context | **Your AI provider** |
 | **Spoken guidance** | The text being read aloud | **ElevenLabs**, only if you saved an ElevenLabs key (otherwise Buildy's own voice, or your computer's voice, speaks on this computer and nothing is sent) |
 | **Grading and verification** (checking a suggested prompt; checking that a pasted prompt worked) | The prompt, its expected outcome and context | **Your AI provider** — on Anthropic this is a separate call to a smaller, cheaper model |
