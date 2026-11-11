@@ -31,7 +31,7 @@ Every npm package inside the app, with its licence text, is listed under "npm pa
 - sharp and libvips (libvips is LGPL-3.0-or-later): replaced by `src/main/sharp-stub.ts`.
 
 ### Electron and Chromium
-- Electron (MIT, Copyright Electron contributors) with Chromium (BSD-3-Clause and many others). Their licences are in `LICENSE.electron.txt` and `LICENSES.chromium.html` next to the app. These include LGPL-2.1 components that Chromium itself ships as separate libraries, notably FFmpeg (`ffmpeg.dll` on Windows, `libffmpeg.dylib` on Mac); MyBuildy does not change them.
+- Electron (MIT, Copyright Electron contributors) with Chromium (BSD-3-Clause and many others). Their licences are in `LICENSE.electron.txt` and `LICENSES.chromium.html` next to the app. These include LGPL-2.1 components that Chromium itself ships as separate libraries, notably FFmpeg (`ffmpeg.dll` on Windows, `libffmpeg.dylib` on Mac); MyBuildy does not change them. Chromium's credits list also quotes GPL and AGPL texts for components that are offered under more than one licence (for example JSZip, MIT or GPL-3.0); MyBuildy adds none of them.
 
 ## Used for training only (not shipped)
 - Kokoro-82M voices (Apache License 2.0): synthetic "Hey Buildy", near-miss and general phrases.

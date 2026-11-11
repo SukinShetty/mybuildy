@@ -75,6 +75,9 @@ const MAX_SCAN = 64 * 1024 * 1024
 function scanText(label, text) {
   // The notices file names eSpeak NG on purpose (as not shipped).
   if (/THIRD_PARTY_NOTICES\.md$/.test(label)) return
+  // Electron's and Chromium's own licence listings quote licence texts
+  // (Chromium's credits include the AGPL text); they are notices, not code.
+  if (/(^|[\\/])(LICENSES\.chromium\.html|LICENSE\.electron\.txt|LICENSE)$/.test(label)) { console.log(`[licences] ${label}: licence listing, not scanned for signatures`); return }
   const hits = gplSignaturesIn(text)
   if (hits.length) problems.push(`${label}: GPL code signature ${hits.join(', ')}`)
 }

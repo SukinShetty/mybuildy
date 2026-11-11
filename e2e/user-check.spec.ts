@@ -99,8 +99,11 @@ test('Paste into terminal pastes into the watched window (never presses Enter)',
 
 test('Settings → Voice: Play sample speaks the female voice (Bella) and the male voice (Puck)', async () => {
   const page = m.main
-  await page.getByTitle('Settings').click()
-  await page.getByRole('button', { name: 'Play sample: Female voice' }).click()
+  // After setup the panel is closed; the robot's gear button opens it.
+  await m.companion.getByRole('button', { name: 'Settings' }).click()
+  const female = page.getByRole('button', { name: 'Play sample: Female voice' })
+  if (!(await female.isVisible().catch(() => false))) await page.getByTitle('Settings').click()
+  await female.click()
   await expect.poll(watchLog, { timeout: 60_000 }).toMatch(/voice-sample voice=bella/)
   await page.getByRole('button', { name: 'Play sample: Male voice' }).click()
   await expect.poll(watchLog, { timeout: 60_000 }).toMatch(/voice-sample voice=puck/)
