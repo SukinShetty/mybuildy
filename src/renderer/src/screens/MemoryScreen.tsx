@@ -68,6 +68,8 @@ export function MemoryScreen(): React.ReactElement {
       load()
     } catch (e) {
       console.warn('[MemoryScreen] reset failed:', e)
+      flash('Memory could not be cleared. Try again.')
+      load()
     }
   }
 
