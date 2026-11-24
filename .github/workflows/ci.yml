@@ -25,8 +25,13 @@ jobs:
 
       # --legacy-peer-deps is required: npm 10+ crashes with an arborist "edgesOut"
       # error on a clean install without it, even though every peer resolves.
+      # On Linux, onnxruntime-node's install step also tries to download optional
+      # CUDA (GPU) binaries; that download now returns 404. MyBuildy never uses
+      # CUDA, so skip it (Windows and Mac don't download it at all).
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
+        env:
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
 
       - name: Typecheck
         run: npm run typecheck
