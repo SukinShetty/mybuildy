@@ -17,6 +17,7 @@ These ship in rebuilt 0.1.0 downloads; the version stays 0.1.0. The update check
 ### Changed
 
 - **"Hey Buildy" wake word is Coming soon for launch.** Settings → Voice shows a greyed-out checkbox labelled *Wake word: say "Hey Buildy" — Coming soon*, with a hint to use the mic button. The listener does not start, even if an earlier test build had the wake word turned on. The code stays so the feature can be turned on later by flipping one flag (`WAKE_WORD_AVAILABLE`).
+- **Buildy's voice no longer contains eSpeak NG (GPL-3.0).** Kokoro, the female voice (Bella) and the male voice (Puck) are unchanged; only the step that turns text into sounds is new (`src/main/kokoro-g2p.ts`): misaki's own US pronunciation dictionaries (Apache-2.0, via the MIT TypeScript port `@titan-design/speech-g2p`), and for words no dictionary has, letter-to-sound rules from `phonemize` (MIT), never letter-by-letter spelling for a normal word. File names and paths are read as words ("index dot H T M L"). `scripts/check-licences.mjs` now fails CI if GPL or AGPL code (or LGPL, non-commercial, or an unknown licence) would ship, and THIRD_PARTY_NOTICES.md lists every shipped package with its licence text.
 - Installers are about 67 MB larger (the bundled listening model, about 64 MB, and the wake word model, about 2.6 MB). `npm run fetch:voice` now also downloads it (pinned revision, checksums verified).
 
 ## [0.1.0] — 2026-09-23

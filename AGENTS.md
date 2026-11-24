@@ -83,6 +83,7 @@ Providers must return the structured analysis JSON (see `src/main/ai/prompt-buil
 | `src/main/voice-queue.ts` | Electron-free serial TTS queue (chunking, dedup). |
 | `src/main/semantic-dedup.ts` | Near-duplicate detection (shared). |
 | `src/main/kokoro-engine.ts`, `kokoro-worker.ts`, `kokoro-chunks.ts` | Buildy's own voice: the bundled Kokoro model (`resources/kokoro`, fetched and SHA-256-checked by `npm run fetch:voice`, pinned revision) loaded once in a utility process; one sentence per chunk, made ahead while the previous one plays. e2e runs skip loading it unless `MYBUILDY_E2E_KOKORO=1`. |
+| `src/main/kokoro-g2p.ts` | Text → Kokoro phonemes with NO eSpeak NG (GPL): kokoro-js's text clean-up (ported), misaki's US dictionaries via `@titan-design/speech-g2p`, then for unknown words `phonemize` letter-to-sound rules (short all-caps / vowel-less words as letters). `phonemizer` (eSpeak NG) is aliased to `phonemizer-stub.ts` in `electron.vite.config.ts`; never call kokoro-js `generate()` (it would phonemize with eSpeak). `scripts/check-licences.mjs` (CI) fails on GPL/AGPL/LGPL/unknown licences, eSpeak signatures in built files, or a shipped package missing from THIRD_PARTY_NOTICES.md (`--write-notices` regenerates the list). |
 | `src/main/voice-health.ts` | Voice order fallbacks in plain words: which voice failed, which one speaks instead, and why. |
 | `src/main/nemp-bridge.ts` | Local persistent project memory (Nemp integration). |
 | `src/main/ai/provider-interface.ts`, `provider-registry.ts` | Provider contract + factory/registry for all providers. |
