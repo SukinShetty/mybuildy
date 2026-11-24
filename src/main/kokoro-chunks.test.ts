@@ -20,3 +20,11 @@ describe("Buildy's own voice speaks one sentence per chunk", () => {
     expect(splitIntoSentences('')).toEqual([])
   })
 })
+
+describe("Buildy's own voice keeps words with a dot inside them", () => {
+  it('"Open index.html in your browser." is spoken whole, not as "html in your browser."', () => {
+    expect(splitIntoSentences('Open index.html in your browser.')).toEqual(['Open index.html in your browser.'])
+    const text = 'Go to mybuildy.com to download MyBuildy. Then open index.html and run the 3 tests in src/main.'
+    expect(splitIntoSentences(text)).toEqual(['Go to mybuildy.com to download MyBuildy.', 'Then open index.html and run the 3 tests in src/main.'])
+  })
+})
