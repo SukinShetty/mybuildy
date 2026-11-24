@@ -17,6 +17,7 @@
 
 import { SpeechSegmenter } from './speech-segmenter'
 import { findWakePhrase, routeCommand, type VoiceCommand } from './wake-phrase'
+import { WAKE_WORD_AVAILABLE } from '../types'
 
 export interface MicHandle {
   /** 16 kHz mono samples, as they arrive. */
@@ -59,8 +60,11 @@ export function shouldListenForWakeWord(input: {
   micButtonRecording: boolean
   /** The computer is asleep or the screen is locked. */
   systemPaused?: boolean
+  /** Test hook: defaults to WAKE_WORD_AVAILABLE so listener tests can run with the flag on. */
+  available?: boolean
 }): boolean {
-  return input.wakeWordEnabled === true && input.watching && input.captureNoticeAccepted && input.robotVisible &&
+  const available = input.available ?? WAKE_WORD_AVAILABLE
+  return available && input.wakeWordEnabled === true && input.watching && input.captureNoticeAccepted && input.robotVisible &&
     input.listenModel !== 'missing' && input.listenModel !== 'failed' && !input.micButtonRecording && input.systemPaused !== true
 }
 

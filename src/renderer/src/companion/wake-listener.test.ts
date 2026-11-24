@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { WakeListener, shouldListenForWakeWord, type ListenIndicator } from './wake-listener'
 import { openMicrophone, micButtonState, micErrorMessage } from './voice-mic'
-import { defaultNonSecretSettings } from '../types'
+import { defaultNonSecretSettings, WAKE_WORD_AVAILABLE, resolveWakeWordSet, wakeWordMayRun } from '../types'
 
 // ── a fake Web Audio + getUserMedia ──
 let pushAudio: ((s: Float32Array) => void) | null = null
@@ -90,24 +90,26 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 const gate = { watching: true, captureNoticeAccepted: true, robotVisible: true, listenModel: 'ready' as const, micButtonRecording: false }
+// Listener-logic tests pass available: true so they still run while the launch flag is off.
+const offered = { ...gate, available: true }
 
 describe('wake word', () => {
   it('is off by default: nothing opens the microphone', async () => {
     const settings = defaultNonSecretSettings()
     expect(settings.wakeWordEnabled).toBe(false)
-    expect(shouldListenForWakeWord({ ...gate, wakeWordEnabled: settings.wakeWordEnabled })).toBe(false)
+    expect(shouldListenForWakeWord({ ...offered, wakeWordEnabled: settings.wakeWordEnabled })).toBe(false)
     makeListener() // created, never started (CompanionApp starts it only through the gate)
     await flush()
     expect(media.getUserMedia).not.toHaveBeenCalled()
   })
 
   it('stops when turned off, the robot is hidden, or the mic button is recording', () => {
-    expect(shouldListenForWakeWord({ ...gate, wakeWordEnabled: true })).toBe(true)
-    expect(shouldListenForWakeWord({ ...gate, wakeWordEnabled: true, robotVisible: false })).toBe(false)
-    expect(shouldListenForWakeWord({ ...gate, wakeWordEnabled: true, watching: false })).toBe(false)
-    expect(shouldListenForWakeWord({ ...gate, wakeWordEnabled: true, captureNoticeAccepted: false })).toBe(false)
-    expect(shouldListenForWakeWord({ ...gate, wakeWordEnabled: true, micButtonRecording: true })).toBe(false)
-    expect(shouldListenForWakeWord({ ...gate, wakeWordEnabled: true, listenModel: 'missing' })).toBe(false)
+    expect(shouldListenForWakeWord({ ...offered, wakeWordEnabled: true })).toBe(true)
+    expect(shouldListenForWakeWord({ ...offered, wakeWordEnabled: true, robotVisible: false })).toBe(false)
+    expect(shouldListenForWakeWord({ ...offered, wakeWordEnabled: true, watching: false })).toBe(false)
+    expect(shouldListenForWakeWord({ ...offered, wakeWordEnabled: true, captureNoticeAccepted: false })).toBe(false)
+    expect(shouldListenForWakeWord({ ...offered, wakeWordEnabled: true, micButtonRecording: true })).toBe(false)
+    expect(shouldListenForWakeWord({ ...offered, wakeWordEnabled: true, listenModel: 'missing' })).toBe(false)
   })
 
   it('turning it on opens the microphone and shows the listening indicator; off closes it', async () => {
@@ -171,7 +173,7 @@ describe('wake word', () => {
   })
 
   it('pauses while the computer sleeps or the screen is locked', () => {
-    expect(shouldListenForWakeWord({ ...gate, wakeWordEnabled: true, systemPaused: true })).toBe(false)
+    expect(shouldListenForWakeWord({ ...offered, wakeWordEnabled: true, systemPaused: true })).toBe(false)
   })
 
   it('silence never reaches the listening model', async () => {
@@ -291,5 +293,20 @@ describe('wake word: state stays true to the detector (regressions)', () => {
     release({ success: true, text: 'why did the tests fail?' }); await flush(); await flush()
     expect(onCommand).not.toHaveBeenCalled()
     expect(indicator.at(-1)).toBe('listening')
+  })
+})
+
+describe('wake word launch hold (WAKE_WORD_AVAILABLE)', () => {
+  it('is off in the shipped flag, and a stored wakeWordEnabled=true never starts listening', () => {
+    expect(WAKE_WORD_AVAILABLE).toBe(false)
+    expect(wakeWordMayRun(true)).toBe(false)
+    expect(resolveWakeWordSet(true)).toBe(false)
+    expect(resolveWakeWordSet(false)).toBe(false)
+    expect(shouldListenForWakeWord({ ...gate, wakeWordEnabled: true })).toBe(false)
+  })
+
+  it('the listener logic still runs when the flag is on', () => {
+    expect(shouldListenForWakeWord({ ...offered, wakeWordEnabled: true })).toBe(true)
+    expect(shouldListenForWakeWord({ ...gate, wakeWordEnabled: true, available: true })).toBe(true)
   })
 })

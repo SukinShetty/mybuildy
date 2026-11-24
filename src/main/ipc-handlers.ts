@@ -21,7 +21,7 @@ import {
 } from './setup-permissions'
 import { mkdirSync } from 'fs'
 import type { BrowserWindow } from 'electron'
-import { isModelConfigured, isBuildyVoice } from '../renderer/src/types'
+import { isModelConfigured, isBuildyVoice, resolveWakeWordSet } from '../renderer/src/types'
 import { IPC, CHOOSE_MODEL_MESSAGE, CAPTURE_NOTICE_REQUIRED_MESSAGE, MAC_PERMISSION_MESSAGES, MAC_BLANK_CAPTURE_MESSAGE } from '../renderer/src/types'
 import type { AppSettings, NonSecretSettings, GuidancePayload, WatchStartResult, AnalyzeNowResult } from '../renderer/src/types'
 import { showGuidanceWindow, hideGuidanceWindow, resizeGuidanceWindow, showLastGuidance, getGuidanceWebContentsId, setGuidanceFocusable, clearGuidanceCache } from './guidance-window'
@@ -185,15 +185,18 @@ export function registerIpcHandlers(
   })
 
   // Settings → Voice: the "Hey Buildy" wake word on/off, saved at once; the robot starts or stops listening now.
+  // When WAKE_WORD_AVAILABLE is false (launch hold), enabling is rejected and a leftover true from an
+  // earlier test build is saved back as false, so the listener never starts.
   ipcMain.handle(IPC.WAKE_WORD_SET, async (event, enabledRaw: unknown) => {
     assertFromMainWindow(event, mainWcId(), 'WAKE_WORD_SET')
     if (typeof enabledRaw !== 'boolean') throw new Error('Expected on/off on WAKE_WORD_SET')
-    await saveNonSecretSettings({ ...(await loadNonSecretSettings()), wakeWordEnabled: enabledRaw })
+    const enabled = resolveWakeWordSet(enabledRaw)
+    await saveNonSecretSettings({ ...(await loadNonSecretSettings()), wakeWordEnabled: enabled })
     invalidateSettingsCache()
-    if (enabledRaw) void startListenEngine() // load the listening model now, so the first "Hey Buildy" is quick
+    if (enabled) void startListenEngine() // load the listening model now, so the first "Hey Buildy" is quick
     const companion = getCompanionWindow()
-    if (companion && !companion.isDestroyed()) companion.webContents.send(IPC.WAKE_WORD_CHANGED, enabledRaw)
-    logWatchEvent('wake-word', { enabled: enabledRaw })
+    if (companion && !companion.isDestroyed()) companion.webContents.send(IPC.WAKE_WORD_CHANGED, enabled)
+    logWatchEvent('wake-word', { enabled })
   })
 
   ipcMain.handle(IPC.LISTEN_STATUS, async () => listenStatus())

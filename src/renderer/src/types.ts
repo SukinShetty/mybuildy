@@ -348,7 +348,25 @@ export const UPDATE_CHECK_NOTE =
   'When MyBuildy opens, it asks GitHub once whether a newer version is published. GitHub sees your IP address, as with any web request; no account, install ID or anything about your projects is sent. Nothing downloads until you click Update.'
 
 // ─── "Hey Buildy" wake word (Settings > Voice) ─────────────────────────────────
-// Off unless the user turns it on. Plain words, no brand or model names.
+// Launch hold: flip WAKE_WORD_AVAILABLE to true to offer the checkbox again.
+// The listener and the Settings toggle both honour this single flag.
+export const WAKE_WORD_AVAILABLE = false
+
+/** Honour a Settings request to turn the wake word on or off. */
+export function resolveWakeWordSet(requested: boolean): boolean {
+  return WAKE_WORD_AVAILABLE ? requested : false
+}
+
+/** Whether the wake-word listener may run given the saved setting. */
+export function wakeWordMayRun(savedEnabled: boolean): boolean {
+  return WAKE_WORD_AVAILABLE && savedEnabled === true
+}
+
+export const WAKE_WORD_COMING_SOON_LABEL = 'Wake word: say "Hey Buildy" — Coming soon'
+export const WAKE_WORD_COMING_SOON_HINT =
+  'Hands-free voice is coming in a future update. Use the mic button for now.'
+
+// Off unless the user turns it on (and WAKE_WORD_AVAILABLE is true). Plain words, no brand or model names.
 export const WAKE_WORD_EXPLANATION =
   'Works best in a quiet room, and may sometimes miss you or wake by mistake; the mic button is always there. ' +
   'Say "Hey Buildy" and then your question, for example "Hey Buildy, give me the prompt". ' +
