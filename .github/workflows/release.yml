@@ -26,6 +26,12 @@ on:
 permissions:
   contents: write
 
+# Two runs for the same tag (e.g. a tag moved twice) wait for each other
+# instead of replacing the same release files at the same time.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   windows-installer:
     if: github.repository == 'SukinShetty/mybuildy'

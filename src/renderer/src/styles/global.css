@@ -15,11 +15,15 @@
   --color-accent:        #FF6B2B;
   --color-accent-muted:  rgba(255, 107, 43, 0.15);
   --color-accent-hover:  #E55E22;
+  /* Accent used AS TEXT on dark/tinted backgrounds (active tab): 5.2:1 on the
+     tinted tab, where #FF6B2B is 3.98:1 (WCAG AA needs 4.5:1). */
+  --color-accent-text:   #FF9466;
 
   /* Text */
   --color-text:          #FFFFFF;
   --color-text-muted:    #AEAEB2;
-  --color-text-dim:      #636366;
+  /* 4.5:1 or more on bg, surface and the selected provider card (#636366 was 2.3–2.8:1). */
+  --color-text-dim:      #98989D;
 
   /* Status */
   --color-success:       #34C759;
@@ -168,7 +172,8 @@ button:active {
   gap: var(--space-2);
   padding: var(--space-2) var(--space-4);
   background: var(--color-accent);
-  color: white;
+  /* Dark text on the brand orange: 6.0:1 (white was 2.84:1; WCAG AA needs 4.5:1). */
+  color: var(--color-bg);
   font-weight: 500;
   border-radius: var(--radius-sm);
 }
@@ -336,3 +341,16 @@ textarea::placeholder {
   background: var(--robot-icon-hover-bg, rgba(255,107,43,0.12));
 }
 .robot-btn:hover { box-shadow: inset 0 0 0 1px rgba(255,107,43,0.55); }
+
+/* Read by screen readers, not shown (screen titles, landmark names). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

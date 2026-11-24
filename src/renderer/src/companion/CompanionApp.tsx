@@ -542,7 +542,8 @@ export function CompanionApp(): React.ReactElement {
   })
 
   return (
-    <div style={S.root}>
+    <div style={S.root} role="main" aria-label="MyBuildy robot">
+      <h1 className="sr-only">MyBuildy</h1>
       <div style={S.drag} />
 
       <div

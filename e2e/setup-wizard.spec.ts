@@ -103,12 +103,13 @@ test.describe('Windows path', () => {
     await page.getByTestId('goal-habits').click()
     await shot(page, 'goal')
     await next(page).click()
+    // The wizard moves on only after the goal save finishes; read it after that.
+    await expect(wizardStep(page)).toHaveAttribute('data-step', 'agent')
     const goal = await page.evaluate(() => (window as unknown as Api).mybuildy.goal.get())
     expect(goal?.purpose).toBe(READY_GOALS[0].purpose)
     expect(goal?.successCriteria).toBe(READY_GOALS[0].doneWhen)
 
     // Open your coding agent — PowerShell, copyable commands.
-    await expect(wizardStep(page)).toHaveAttribute('data-step', 'agent')
     await expect(page.getByText('PowerShell', { exact: true })).toBeVisible()
     await expect(page.getByText('mkdir my-project; cd my-project', { exact: true })).toBeVisible()
     await shot(page, 'agent')
@@ -211,11 +212,11 @@ test.describe('Mac path (on any OS, with fake permissions)', () => {
       await page.getByLabel('What do you want to build?').fill('A page that lists my favourite books.')
       await page.getByLabel(/Done when/).fill('the page shows five books with their authors.')
       await next(page).click()
+      await expect(wizardStep(page)).toHaveAttribute('data-step', 'agent') // the goal save has finished
       const goal = await page.evaluate(() => (window as unknown as Api).mybuildy.goal.get())
       expect(goal?.purpose).toBe('A page that lists my favourite books.')
 
       // Mac instructions: Terminal.
-      await expect(wizardStep(page)).toHaveAttribute('data-step', 'agent')
       await expect(page.getByText('Terminal', { exact: true })).toBeVisible()
       await expect(page.getByText('mkdir my-project && cd my-project', { exact: true })).toBeVisible()
       await next(page).click()

@@ -16,7 +16,7 @@ import { readJson } from './provider-errors'
 import { userFacingHandoff } from '../display-consistency'
 import { fetchWithTimeout } from './fetch-with-timeout'
 import { debugLog } from '../debug-log'
-import { recordProviderCall } from '../cost-guard'
+import { reserveProviderCall } from '../cost-guard'
 
 const HAIKU_MODEL = 'claude-haiku-4-5-20251001'
 
@@ -194,7 +194,11 @@ async function callGrader(
     messages: [{ role: 'user', content: [{ type: 'text', text: user }] }],
   }
 
-  recordProviderCall() // cost guard: grader call
+  // Cost guard: at the hourly cap the grader is skipped and the prompt is kept as it is.
+  if (!reserveProviderCall(settings.hourlyCallCap)) {
+    console.log('[PromptQuality] Hourly request limit reached — skipping grader')
+    return ''
+  }
   const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers,

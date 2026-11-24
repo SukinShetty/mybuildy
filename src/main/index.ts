@@ -24,7 +24,7 @@ import { startKokoro, stopKokoro } from './kokoro-engine'
 import { startListenEngine, stopListenEngine } from './listen-engine'
 import { PowerPause } from './power-pause'
 import { migratePlaintextSecrets } from './secure-store'
-import { settingsFilePath, loadRedactedSettings, loadGoal, loadNonSecretSettings, saveNonSecretSettings } from './memory'
+import { settingsFilePath, loadRedactedSettings, loadGoal, loadNonSecretSettings, updateNonSecretSettings } from './memory'
 import { isModelConfigured, wakeWordMayRun } from '../renderer/src/types'
 import { debugLog } from './debug-log'
 import { isSafeExternalUrl, isAllowedAppNavigation, isBlockedDevShortcut } from './navigation-guard'
@@ -399,7 +399,7 @@ app.whenReady().then(async () => {
   // and is written back as false so the feature stays off until they opt in again later.
   void loadNonSecretSettings().then(async (s) => {
     if (!wakeWordMayRun(s.wakeWordEnabled)) {
-      if (s.wakeWordEnabled) await saveNonSecretSettings({ ...s, wakeWordEnabled: false })
+      if (s.wakeWordEnabled) await updateNonSecretSettings((current) => ({ ...current, wakeWordEnabled: false }))
       return
     }
     void startListenEngine()

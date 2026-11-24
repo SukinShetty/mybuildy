@@ -8,7 +8,8 @@
 import { app } from 'electron'
 import { isAllowedProviderUrl, customKeyAllowed } from './provider-origins'
 import { promises as fs } from 'fs'
-import { join, dirname } from 'path'
+import { randomUUID } from 'crypto'
+import { join, dirname, basename } from 'path'
 import type {
   ProjectMemory,
   AppSettings,
@@ -59,8 +60,9 @@ export async function loadProjectMemory(directory: string | null = activeMemoryD
     const fileContent = await fs.readFile(projectMemoryFilePath(directory), 'utf-8')
     const raw = JSON.parse(fileContent) as Partial<ProjectMemory>
     // Merge over defaults so files written by older versions gain new fields
-    // (goal, goalPromptSeen) without breaking.
-    return { ...emptyProjectMemory(), ...raw }
+    // (goal, goalPromptSeen) without breaking. A field of the wrong type (a
+    // damaged or hand-edited file) falls back to its default instead of reaching callers.
+    return normalizeProjectMemory(raw)
   } catch {
     // File doesn't exist yet or is corrupt — return a blank project
     return emptyProjectMemory()
@@ -80,7 +82,32 @@ export async function saveProjectMemory(projectMemory: ProjectMemory, expectedDi
     ...projectMemory,
     updatedAt: new Date().toISOString(),
   }
-  await fs.writeFile(filePath, JSON.stringify(updatedMemory, null, 2), 'utf-8')
+  // Atomic: a failed or interrupted write leaves the last saved file intact.
+  await writeFileAtomic(filePath, JSON.stringify(updatedMemory, null, 2))
+}
+
+/** Defaults for missing fields, and for fields of the wrong type. */
+function normalizeProjectMemory(raw: unknown): ProjectMemory {
+  const base = emptyProjectMemory()
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return base
+  const merged = { ...base, ...(raw as Partial<ProjectMemory>) } as ProjectMemory
+  const fields = merged as unknown as Record<string, unknown>
+  const defaults = base as unknown as Record<string, unknown>
+  for (const key of Object.keys(defaults)) {
+    const fallback = defaults[key]
+    const value = fields[key]
+    if (key === 'goal') continue
+    if (Array.isArray(fallback)) {
+      fields[key] = Array.isArray(value) ? value.filter((item) => typeof item === 'string') : fallback
+    } else if (fallback !== null && typeof value !== typeof fallback) {
+      fields[key] = fallback
+    }
+  }
+  const goal = fields.goal as Partial<Goal> | null | undefined
+  merged.goal = goal && typeof goal === 'object' && !Array.isArray(goal) && typeof goal.purpose === 'string'
+    ? (goal as Goal)
+    : null
+  return merged
 }
 
 // ─── Goal ───────────────────────────────────────────────────────────────────
@@ -195,14 +222,50 @@ export async function loadRedactedSettings(): Promise<RedactedSettings> {
   return redactSettings(await loadNonSecretSettings())
 }
 
+// Every settings change goes through ONE queue and is computed from the
+// latest saved settings, so two changes never overwrite each other (e.g. a
+// general Settings save that started first can't put back a wake word the
+// user has just switched off).
+let settingsQueue: Promise<unknown> = Promise.resolve()
+
+/**
+ * Change the saved settings: `change` gets the settings as saved right now
+ * (after every earlier change has finished) and returns the new settings.
+ */
+export function updateNonSecretSettings(
+  change: (current: NonSecretSettings) => NonSecretSettings
+): Promise<NonSecretSettings> {
+  const run = settingsQueue.then(async () => {
+    const current = await loadNonSecretSettings()
+    const next = cleanSettings(change(current), current)
+    await ensureUserDataDirectoryExists()
+    await writeFileAtomic(settingsFilePath, JSON.stringify(next, null, 2))
+    return next
+  })
+  settingsQueue = run.catch(() => undefined)
+  return run
+}
+
+/** A general Settings save: everything except the settings that have their
+ *  own switch (wake word, Buildy's voice), which keep their saved value. */
+export function saveGeneralSettings(s: NonSecretSettings): Promise<NonSecretSettings> {
+  return updateNonSecretSettings((current) => ({
+    ...s,
+    wakeWordEnabled: current.wakeWordEnabled,
+    buildyVoice: current.buildyVoice,
+  }))
+}
+
 /** Persist ONLY non-secret fields. Any stray secret/proxy fields are dropped. */
 export async function saveNonSecretSettings(s: NonSecretSettings): Promise<void> {
-  await ensureUserDataDirectoryExists()
+  await updateNonSecretSettings(() => s)
+}
+
+function cleanSettings(s: NonSecretSettings, onDisk: NonSecretSettings): NonSecretSettings {
   // captureNoticeAccepted is STICKY-TRUE: once the user has accepted the
   // one-time disclosure, a stale settings save from another window can't
   // silently reset it. Only "Delete all MyBuildy data" clears it (fresh file).
-  const onDisk = await loadNonSecretSettings()
-  const clean: NonSecretSettings = {
+  return {
     provider: s.provider,
     modelId: s.modelId,
     baseUrl: s.baseUrl,
@@ -213,7 +276,6 @@ export async function saveNonSecretSettings(s: NonSecretSettings): Promise<void>
     captureNoticeAccepted: s.captureNoticeAccepted || onDisk.captureNoticeAccepted,
     wakeWordEnabled: s.wakeWordEnabled === true,
   }
-  await fs.writeFile(settingsFilePath, JSON.stringify(clean, null, 2), 'utf-8')
 }
 
 // ─── Delete all MyBuildy data (Settings → restart to first run) ─────────────────
@@ -234,6 +296,13 @@ export async function deleteAllMyBuildyData(): Promise<void> {
     'setup-state.json',      // where the setup wizard is up to (setup-state.ts)
     'robot-prefs.json',      // the robot's size (robot-prefs.ts)
   ]
+  // The project list's backup and recovery copies (projects.json.backup,
+  // projects.json.damaged-*) and any temp file left by an interrupted atomic
+  // write (<name>.<uuid>.tmp) hold project names and goals too.
+  const siblings = await fs.readdir(userDataDirectory).catch(() => [] as string[])
+  for (const name of siblings) {
+    if (/^projects\.json\./.test(name) || /^(settings|project-memory)\.json\..*\.tmp$/.test(name)) targets.push(name)
+  }
   const failed: string[] = []
   for (const name of targets) {
     const target = join(userDataDirectory, name)
@@ -256,6 +325,24 @@ export async function deleteAllMyBuildyData(): Promise<void> {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Write a synced sibling, then rename it over the file: an interrupted or
+ *  failed write can never truncate the saved file (same as projects-core). */
+async function writeFileAtomic(filePath: string, content: string): Promise<void> {
+  const temp = join(dirname(filePath), `${basename(filePath)}.${randomUUID()}.tmp`)
+  try {
+    const handle = await fs.open(temp, 'wx', 0o600)
+    try {
+      await handle.writeFile(content, 'utf-8')
+      await handle.sync()
+    } finally {
+      await handle.close()
+    }
+    await fs.rename(temp, filePath)
+  } finally {
+    await fs.rm(temp, { force: true })
+  }
+}
 
 async function ensureUserDataDirectoryExists(): Promise<void> {
   try {
