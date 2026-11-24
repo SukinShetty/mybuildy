@@ -228,7 +228,7 @@ export function splitIntoChunks(text: string, maxChars = 250): string[] {
   const clean = (text || '').replace(/\s+/g, ' ').trim()
   if (!clean) return []
 
-  const sentences = clean.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || [clean]
+  const sentences = clean.match(/(?:[^.!?]|[.!?](?!\s|$))+[.!?]+(?=\s|$)|(?:[^.!?]|[.!?](?!\s|$))+$/g) || [clean]
   const chunks: string[] = []
   let buf = ''
 

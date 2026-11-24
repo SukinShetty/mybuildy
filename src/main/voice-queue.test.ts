@@ -123,3 +123,19 @@ describe('VoiceQueue', () => {
     expect(plays.length).toBe(after)
   })
 })
+
+describe('splitIntoChunks keeps words with a dot inside them (index.html, mybuildy.com)', () => {
+  const lines = [
+    'Open index.html in your browser.',
+    'Go to mybuildy.com to download it. Then open the app.',
+    'Your .env file is missing. Add it and restart.',
+    'Run npm test, then open src/main/index.ts and check the 3.5 second timeout!',
+    'Version 0.1.0 is out. e.g. try it now',
+  ]
+  it('no words are dropped: the chunks put back together are the whole text', () => {
+    for (const line of lines) expect(splitIntoChunks(line).join(' ')).toBe(line)
+  })
+  it('a sentence is not cut at the dot inside a word', () => {
+    expect(splitIntoChunks('Open index.html in your browser.')).toEqual(['Open index.html in your browser.'])
+  })
+})

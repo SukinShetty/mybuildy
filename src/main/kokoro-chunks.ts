@@ -15,7 +15,7 @@ export function splitIntoSentences(text: string): string[] {
   const clean = (text || '').replace(/\s+/g, ' ').trim()
   if (!clean) return []
   // Same sentence boundaries as splitIntoChunks.
-  const sentences = (clean.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || [clean]).map((s) => s.trim()).filter(Boolean)
+  const sentences = (clean.match(/(?:[^.!?]|[.!?](?!\s|$))+[.!?]+(?=\s|$)|(?:[^.!?]|[.!?](?!\s|$))+$/g) || [clean]).map((s) => s.trim()).filter(Boolean)
   const merged: string[] = []
   let carry = ''
   for (const s of sentences) {
