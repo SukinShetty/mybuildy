@@ -54,3 +54,22 @@ export function getCallsThisHour(): number {
 export function isAtHourlyCap(cap: number): boolean {
   return atCap(globalWindow, cap, Date.now())
 }
+
+/**
+ * Take one request from the hourly budget, just before a paid request is
+ * sent: false (and nothing recorded) when the cap is already reached. Every
+ * AI request goes through this — watching, questions, Brainstorm, the prompt
+ * grader and the verifier — so "the most AI requests MyBuildy will make in any
+ * one hour" holds for all of them. Check-and-record is one synchronous step, so
+ * two requests can't both take the last slot.
+ */
+export function reserveProviderCall(cap: number): boolean {
+  if (isAtHourlyCap(cap)) return false
+  recordProviderCall()
+  return true
+}
+
+/** What the user sees when a request was not sent because of the hourly cap. */
+export function hourlyCapMessage(cap: number): string {
+  return `You've reached your limit of ${cap} AI requests this hour, so nothing was sent. You can raise the limit in Settings.`
+}

@@ -31,6 +31,7 @@ $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 100
 $timer.Add_Tick({
   [IO.File]::WriteAllText($env:FORM_OUT, $tb.Text)
+  [IO.File]::WriteAllText($env:FORM_OUT + '.state', 'formActive=' + ($f -eq [System.Windows.Forms.Form]::ActiveForm) + ' textboxFocused=' + $tb.Focused)
   if (Test-Path $env:FORM_CMD) {
     $c = [IO.File]::ReadAllText($env:FORM_CMD); Remove-Item $env:FORM_CMD
     if ($c.StartsWith('retitle:')) { $f.Text = $c.Substring(8) }
@@ -43,7 +44,7 @@ $timer.Start()
 [void]$f.ShowDialog()
 `
 
-interface TestWindow { hwnd: string; pid: number; text(): string; command(c: string): Promise<void>; proc: ChildProcess }
+interface TestWindow { hwnd: string; pid: number; text(): string; state(): string; command(c: string): Promise<void>; proc: ChildProcess }
 
 let dir = ''
 const windows: TestWindow[] = []
@@ -68,6 +69,7 @@ async function openWindow(name: string, left: number, title = SAME_TITLE): Promi
     ...ids,
     proc,
     text: () => (existsSync(out) ? readFileSync(out, 'utf8') : ''),
+    state: () => (existsSync(`${out}.state`) ? readFileSync(`${out}.state`, 'utf8') : 'no state written'),
     command: async (c) => { writeFileSync(cmd, c); await delay(400) },
   }
   windows.push(w)
@@ -75,8 +77,26 @@ async function openWindow(name: string, left: number, title = SAME_TITLE): Promi
   return w
 }
 
+function readClipboard(): string {
+  const r = spawnSync('powershell.exe', ['-NoProfile', '-STA', '-Command', '[Console]::Out.Write((Get-Clipboard -Raw))'], { encoding: 'utf8' })
+  return `${r.stdout ?? ''}`
+}
+
+// The test's stand-in for Electron's clipboard.writeText. It checks the
+// clipboard really holds the prompt before the paste runs: a clipboard held
+// open by another program (clipboard history, a clipboard manager, a remote
+// desktop) makes Set-Clipboard fail, and an unchecked failure would look like
+// a paste that delivered nothing.
 function setClipboard(text: string): void {
-  spawnSync('powershell.exe', ['-NoProfile', '-STA', '-Command', 'Set-Clipboard -Value $env:MYBUILDY_TEST_CLIP'], { env: { ...process.env, MYBUILDY_TEST_CLIP: text } })
+  let last = ''
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const r = spawnSync('powershell.exe', ['-NoProfile', '-STA', '-Command', 'Set-Clipboard -Value $env:MYBUILDY_TEST_CLIP'], { env: { ...process.env, MYBUILDY_TEST_CLIP: text }, encoding: 'utf8' })
+    const now = readClipboard()
+    if (now === text) return
+    last = `attempt ${attempt}: Set-Clipboard exit ${r.status}, stderr ${JSON.stringify(String(r.stderr ?? '').trim())}, clipboard now ${JSON.stringify(now)}`
+    console.log(`[test] clipboard not set: ${last}`)
+  }
+  throw new Error(`the test could not put the prompt on the clipboard (${last})`)
 }
 
 function runScript(command: SendCommand): Promise<SendExit> {
@@ -99,6 +119,7 @@ async function paste(marker: string, picked: TestWindow, title = SAME_TITLE): Pr
     log: (m) => console.log(m),
   })
   await delay(800) // let the forms write their text out
+  console.log(`[test] ${marker}: result ${JSON.stringify(result)}; picked text ${JSON.stringify(picked.text())}, ${picked.state()}; clipboard after ${JSON.stringify(readClipboard())}`)
   return result
 }
 
@@ -153,4 +174,20 @@ describe.skipIf(!isWindows)('Paste into terminal, two windows with the same titl
     expect(result.sent).toBe(true)
     expect(picked.text()).toBe('PASTE-FIVE') // exactly the prompt: no newline (Enter) after it
   }, 90_000)
+
+  // The pre-launch audit saw the happy path deliver nothing on one PC (exit 0,
+  // text box empty) while the other cases passed. Repeat it in fresh windows
+  // so a flaky delivery shows up here, with the clipboard and focus state in
+  // the log for each try.
+  it('happy path, repeated in fresh windows: every paste lands, exactly once, with no Enter', async () => {
+    for (let i = 1; i <= 5; i++) {
+      const picked = await openWindow(`repeat-${i}`, 50)
+      const marker = `PASTE-REPEAT-${i}`
+      const result = await paste(marker, picked)
+      expect(result.sent, `try ${i}`).toBe(true)
+      expect(picked.text(), `try ${i}: ${picked.state()}`).toBe(marker)
+      for (const w of windows.splice(0)) { try { w.proc.kill() } catch { /* gone */ } }
+      await delay(300)
+    }
+  }, 240_000)
 })

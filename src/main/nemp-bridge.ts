@@ -40,6 +40,7 @@
 // ════════════════════════════════════════════════════════════════════════════
 
 import { app } from 'electron'
+import { createHash } from 'crypto'
 import type { ProjectMemory, MemoryEntry, MemorySnapshot, Goal } from '../renderer/src/types'
 import { projectStoreDir } from './projects-core'
 import { loadProjectMemory, loadGoal } from './memory'
@@ -106,6 +107,18 @@ function slug(text: string, max = 40): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, max) || 'item'
+}
+
+/**
+ * Key part for a fact: a readable slug plus a short hash of the FULL text, so
+ * two different facts that share their first 40 characters get different keys
+ * (a shared slug alone made the second silently replace the first). The same
+ * text always gets the same key. Entries saved under older slug-only keys are
+ * kept as they are.
+ */
+function factId(text: string): string {
+  const hash = createHash('sha256').update(text.trim().toLowerCase()).digest('hex').slice(0, 10)
+  return `${slug(text)}-${hash}`
 }
 
 function readAll(): NempMemory[] {
@@ -299,12 +312,12 @@ export async function recordCompletion(feature: string): Promise<void> {
     writeOne({ ...dup, timestamp: nowISO() })
     return
   }
-  writeOne({ key: `completion:${slug(feature)}`, value: feature.trim(), tags: [TAG, 'completion'], timestamp: nowISO(), source: SOURCE, agent_id: AGENT_ID })
+  writeOne({ key: `completion:${factId(feature)}`, value: feature.trim(), tags: [TAG, 'completion'], timestamp: nowISO(), source: SOURCE, agent_id: AGENT_ID })
 }
 
 export async function recordBlocker(description: string): Promise<void> {
   if (!description?.trim() || rejectMomentary('blocker', description)) return
-  writeOne({ key: `blocker:${slug(description)}`, value: description.trim(), tags: [TAG, 'blocker', 'open'], timestamp: nowISO(), source: SOURCE, agent_id: AGENT_ID })
+  writeOne({ key: `blocker:${factId(description)}`, value: description.trim(), tags: [TAG, 'blocker', 'open'], timestamp: nowISO(), source: SOURCE, agent_id: AGENT_ID })
 }
 
 export async function resolveBlocker(blockerId: string, resolution: string): Promise<void> {
@@ -322,12 +335,12 @@ export async function resolveBlocker(blockerId: string, resolution: string): Pro
 export async function recordDecision(question: string, choice: string, reasoning?: string): Promise<void> {
   if (!choice?.trim()) return
   const value = `Q: ${question}\nChoice: ${choice}${reasoning ? `\nWhy: ${reasoning}` : ''}`
-  writeOne({ key: `decision:${slug(question || choice)}`, value, tags: [TAG, 'decision'], timestamp: nowISO(), source: SOURCE, agent_id: AGENT_ID })
+  writeOne({ key: `decision:${factId(question || choice)}`, value, tags: [TAG, 'decision'], timestamp: nowISO(), source: SOURCE, agent_id: AGENT_ID })
 }
 
 export async function recordPattern(observation: string, confidence: 'low' | 'medium' | 'high'): Promise<void> {
   if (!observation?.trim() || rejectMomentary('pattern', observation)) return
-  writeOne({ key: `pattern:${slug(observation)}`, value: observation.trim(), tags: [TAG, 'pattern', confidence], timestamp: nowISO(), source: SOURCE, agent_id: AGENT_ID })
+  writeOne({ key: `pattern:${factId(observation)}`, value: observation.trim(), tags: [TAG, 'pattern', confidence], timestamp: nowISO(), source: SOURCE, agent_id: AGENT_ID })
 }
 
 // ─── Sync / maintenance ───────────────────────────────────────────────────────
@@ -353,18 +366,26 @@ export async function exportToMyBuildyMd(filePath: string): Promise<void> {
   console.log(`[Nemp] Exported MYBUILDY.md → ${filePath}`)
 }
 
-/** Wipe every memory MyBuildy wrote to the store. */
+/**
+ * Wipe every memory MyBuildy wrote to the store. Throws if it could not, so
+ * the Memory screen never says "Memory cleared" when nothing was cleared.
+ */
 export async function resetMemory(): Promise<void> {
-  if (!storage) return
-  const all = readAll()
+  if (!(await ensureNemp()) || !storage) throw new Error('Project memory could not be opened, so nothing was cleared.')
+  const all = storage.readMemories(projectPath) // a read failure is a reset failure, not "nothing to clear"
   const keep = all.filter((m) => !m.tags.includes(TAG))
   try {
     storage.writeMemories(keep, projectPath)
-    storage.updateMemoryIndex(projectPath)
-    console.log(`[Nemp] RESET — removed ${all.length - keep.length} MyBuildy memories (kept ${keep.length} others)`)
   } catch (error) {
     console.error('[Nemp] reset failed:', error)
+    throw error
   }
+  try {
+    storage.updateMemoryIndex(projectPath) // the readable MEMORY.md index; the memories are already gone
+  } catch (error) {
+    console.warn('[Nemp] reset: index update failed:', error)
+  }
+  console.log(`[Nemp] RESET — removed ${all.length - keep.length} MyBuildy memories (kept ${keep.length} others)`)
 }
 
 // ─── util ──────────────────────────────────────────────────────────────────────

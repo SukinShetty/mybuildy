@@ -91,9 +91,9 @@ export async function callTextCompletion(req: TextCompletionRequest): Promise<st
     headers['X-Title'] = 'MyBuildy'
   }
 
-  // Ollama's /v1 OpenAI-compatible endpoint has patchy image_url support, so
-  // its native /api/chat is used for images instead (see below).
-  if (provider === 'ollama' && image) {
+  // Ollama: its native /api/chat, with or without an image (its base URL has no
+  // /v1, and its OpenAI-compatible endpoint has patchy image_url support).
+  if (provider === 'ollama') {
     const res = await fetchWithTimeout(`${(settings.baseUrl || getProviderInfo('ollama').defaultBaseUrl).replace(/\/$/, '')}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -103,7 +103,7 @@ export async function callTextCompletion(req: TextCompletionRequest): Promise<st
         options: { num_predict: maxTokens },
         messages: [
           { role: 'system', content: system },
-          { role: 'user', content: user, images: [image] },
+          image ? { role: 'user', content: user, images: [image] } : { role: 'user', content: user },
         ],
       }),
     }, true)
